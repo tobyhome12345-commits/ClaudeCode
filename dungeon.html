@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Emberdeep — Dungeon Crawler</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      background: #05040a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none; -webkit-user-select: none;
+    }
+    canvas { display: block; cursor: crosshair; touch-action: none; }
+    #back-btn {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 999;
+      padding: 0.3rem 0.8rem;
+      background: rgba(13,13,26,0.82);
+      color: #a8dadc;
+      border: 1px solid #1a3a6a;
+      border-radius: 20px;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-decoration: none;
+      backdrop-filter: blur(6px);
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    #back-btn:hover { background: rgba(168,218,220,0.12); border-color: #a8dadc; color: #fff; }
+
+    /* ── Touch controls (touch devices only) ─────────────────── */
+    #touch-ui { display: none; }
+    .joy {
+      position: fixed; bottom: 24px; z-index: 200;
+      width: 120px; height: 120px;
+      background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 50%;
+      touch-action: none;
+    }
+    #joyL { left: 24px; }
+    #joyR { right: 24px; border-color: rgba(255,150,80,0.4); }
+    .joy .dot {
+      position: absolute; top: 50%; left: 50%;
+      width: 44px; height: 44px;
+      background: rgba(255,255,255,0.35);
+      border: 2px solid rgba(255,255,255,0.6);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .tbtn {
+      position: fixed; right: 24px; z-index: 200;
+      width: 64px; height: 40px;
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      font: bold 11px 'Courier New', monospace;
+      touch-action: none;
+    }
+    #btnDash   { bottom: 156px; }
+    #btnPotion { bottom: 204px; }
+    #btnUse    { bottom: 252px; }
+    @media (pointer: coarse) {
+      #touch-ui { display: block; }
+      canvas { cursor: default; }
+    }
+  </style>
+</head>
+<body>
+<a id="back-btn" href="index.html">&#8592; Hub</a>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="touch-ui">
+  <div id="joyL" class="joy"><div class="dot"></div></div>
+  <div id="joyR" class="joy"><div class="dot"></div></div>
+  <button id="btnDash" class="tbtn">DASH</button>
+  <button id="btnPotion" class="tbtn">POTION</button>
+  <button id="btnUse" class="tbtn">USE</button>
+</div>
+<script>
+'use strict';
+// ============================================================
+// CONSTANTS  (all gameplay tuning lives here)
+// ============================================================
+const VIEW_W = 800, VIEW_H = 600;
+const TILE = 32;
+const MAP_W = 56, MAP_H = 42;
+const PX = 3;                         // screen pixels per sprite pixel
+const TAU = Math.PI * 2;
+const FINAL_FLOOR = 3;
+const ARENA_W = 17, ARENA_H = 13;     // boss room size in tiles
+
+const T_WALL = 0, T_FLOOR = 1, T_PILLAR = 2, T_STAIRS = 3, T_GATE = 4;
+
+const PLAYER_RADIUS = 10;
+const PLAYER_SPEED = 175;             // px / second
+const PLAYER_MAX_HP = 100;
+const PLAYER_IFRAMES = 0.7;           // seconds of mercy after a hit
+const DASH_SPEED = 520, DASH_TIME = 0.16, DASH_COOLDOWN = 0.9;
+const SWING_TIME = 0.14;
+const POTION_HEAL = 40, POTION_MAX = 5;
+const FOV_RADIUS = 7;                 // tiles
+const LIGHT_RADIUS = 340;             // px
+const PICKUP_RADIUS = 20, MAGNET_RADIUS = 85, WEAPON_REACH = 34;
+const CORNER_ASSIST = 7;               // px of wall corner you can slip around
+
+const FLOOR_HP_SCALE = 0.4, FLOOR_DMG_SCALE = 0.25, FLOOR_SPEED_SCALE = 0.05;
+const ENEMY_STATS = {
+  slime:    { hp: 34,  speed: 70,  r: 12, dmg: 12, gold: [1, 3] },
+  mini:     { hp: 12,  speed: 95,  r: 8,  dmg: 6,  gold: [0, 1] },   // spawned when a slime splits
+  bat:      { hp: 16,  speed: 150, r: 9,  dmg: 8,  gold: [1, 2] },
+  skeleton: { hp: 28,  speed: 80,  r: 11, dmg: 11, gold: [2, 4] },
+  boss:     { hp: 850, speed: 72,  r: 32, dmg: 18, gold: [40, 40] },
+};
+const SPAWN_WEIGHTS = [               // per floor
+  { slime: 55, bat: 30, skeleton: 15 },
+  { slime: 38, bat: 30, skeleton: 32 },
+  { slime: 30, bat: 30, skeleton: 40 },
+];
+const SLIME_HOP_TIME = 0.32, SLIME_HOP_BOOST = 2.6;
+const BAT_FLEE_TIME = 0.7;
+const SKELETON_NEAR = 140, SKELETON_FAR = 270, SKELETON_SIGHT = 400;
+const SKELETON_AIM_TIME = 0.5, SKELETON_ARROW_SPEED = 270;
+
+const BOSS_NAME = 'THE EMBER KING';
+const BOSS_COLLIDE_R = 24;
+const BOSS_CHARGE_SPEED = 540;
+const BOSS_BULLET_DMG = 12, BOSS_CHARGE_DMG = 24;
+const BOSS_RING_COUNT = 14, BOSS_RING_SPEED = 170;
+const BOSS_FAN_COUNT = 5, BOSS_FAN_SPREAD = 0.22, BOSS_FAN_SPEED = 230;
+const BOSS_SPIRAL_SPEED = 185;
+
+const WEAPONS = {
+  sword: { name: 'Sword',      icon: 'sword', kind: 'melee', dmg: 16, cd: 0.34, range: 56, arc: 2.0, knock: 240 },
+  bow:   { name: 'Bow',        icon: 'bow',   kind: 'arrow', dmg: 11, cd: 0.36, speed: 560, pierce: 1, knock: 120 },
+  staff: { name: 'Fire Staff', icon: 'staff', kind: 'orb',   dmg: 12, cd: 0.52, speed: 380, aoe: 50, knock: 160 },
+};
+const WEAPON_KEYS = Object.keys(WEAPONS);
+const RARITIES = [
+  { name: 'Common', mult: 1.0,  color: '#c8ccd4' },
+  { name: 'Rare',   mult: 1.35, color: '#4da6ff' },
+  { name: 'Epic',   mult: 1.75, color: '#c77dff' },
+];
+const RARITY_ODDS = [[0.60, 0.32, 0.08], [0.35, 0.45, 0.20], [0.15, 0.45, 0.40]];   // per floor
+
+const RELICS = {
+  boots:  { name: 'Swift Boots',  desc: '+12% speed' },
+  shard:  { name: 'Power Shard',  desc: '+18% damage' },
+  charm:  { name: 'Storm Charm',  desc: 'Attack 12% faster' },
+  fang:   { name: 'Vampire Fang', desc: 'Heal 2 HP per kill' },
+  shield: { name: 'Iron Crest',   desc: 'Take 15% less damage' },
+  heart:  { name: 'Heart Vessel', desc: '+25 max HP' },
+};
+const RELIC_KEYS = Object.keys(RELICS);
+
+const THEMES = [
+  { name: 'The Forgotten Crypt', floor: '#2a2d3e', floorAlt: '#2f3346', line: '#212338', speck: '#3a3f58',
+    wallTop: '#12131c', face: '#4b5072', faceDark: '#3a3e5c', mortar: '#262840', light: '#6b71a0' },
+  { name: 'The Mossy Halls',     floor: '#26342c', floorAlt: '#2b3a31', line: '#1c2821', speck: '#3c5444',
+    wallTop: '#0f1512', face: '#4a6350', faceDark: '#3a4d3f', mortar: '#222e26', light: '#6f9276' },
+  { name: 'The Ember Throne',    floor: '#3a2626', floorAlt: '#412b2a', line: '#2b1b1c', speck: '#5a3531',
+    wallTop: '#170d0f', face: '#6e3d38', faceDark: '#582f2c', mortar: '#2e1819', light: '#a05e50' },
+];
+
+// ============================================================
+// PALETTE & SPRITES  (each char is one palette entry, '.' = transparent)
+// ============================================================
+const PALETTE = {
+  k: '#1a1423', w: '#f4f4f4', g: '#9aa5b1', G: '#5b6470', r: '#e43b44', R: '#a22633',
+  o: '#f77622', y: '#fee761', b: '#3a86ff', B: '#1d4ed8', n: '#63c74d', N: '#3e8948',
+  p: '#b55088', P: '#68386c', s: '#e8b796', t: '#b86f50', T: '#733e39', c: '#2ce8f5', m: '#ead4aa',
+};
+
+const SPRITE_DATA = {
+  player: { rows: [
+    '....kkkk....', '...kggggk...', '..kgwgggGk..', '..kkkkkkkk..', '..kGcGGcGk..', '..kggggggk..',
+    '.kkbbbbbbkk.', 'kgkbbyybbkgk', 'kgkbbbbbbkgk', '.kkBBBBBBkk.', '..kGGkkGGk..', '..kkk..kkk..' ] },
+  slime: { rows: [
+    '....kkkk....', '..kknnnnkk..', '.knnwnnnnnk.', '.knwnnnnnnk.', 'knnnknnknnnk', 'knnnknnknnnk',
+    'knnnnnnnnnnk', 'kNnnnnnnnnNk', '.kNNNNNNNNk.', '..kkkkkkkk..' ] },
+  skeleton: { rows: [
+    '...kkkkkk...', '..kmmmmmmk..', '..kmkmmkmk..', '..kmrmmrmk..', '..kmmmmmmk..', '...kmkmkk...',
+    '..kkkmmkkk..', '.kmkmmmmkmk.', '.kmkmkkmkmk.', '.kk.kmmk.kk.', '...kmkkmk...', '...kkk.kkk..' ] },
+  batA: { rows: [
+    'kk..k..k..kk', 'kpk.kkkk.kpk', 'kppkppppkppk', 'kppprpprpppk', '.kPppppppPk.', '..kk.kk.kk..' ] },
+  batB: { rows: [
+    '....k..k....', '....kkkk....', '.kkkppppkkk.', 'kppprpprpppk', 'kpPkppppkPpk', 'kk..kkkk..kk' ] },
+  boss: { scale: 5, rows: [
+    'kk............kk', 'kRk..y.yy.y..kRk', 'kRRk.yyyyyy.kRRk', '.kRRkkkkkkkkRRk.', '..kkrrrrrrrrkk..',
+    '..krrrrrrrrrrk..', '.krrkkrrrrkkrrk.', '.krkyykrrkyykrk.', '.krkyokrrkoykrk.', '.krrkkrrrrkkrrk.',
+    '.krrrrrkkrrrrrk.', '..krrrrrrrrrrk..', '..kRkwkwwkwkRk..', '..kRRkwkkwkRRk..', '...kRRRRRRRRk...',
+    '....kkkkkkkk....' ] },
+  chest: { rows: [
+    '.kkkkkkkkkk.', 'kttttttttttk', 'ktttttttttTk', 'kyyyykkyyyyk', 'kTTTkyykTTTk', 'kttttkkttttk',
+    'kttttttttTTk', 'kTTTTTTTTTTk', '.kkkkkkkkkk.' ] },
+  chestOpen: { rows: [
+    '.kkkkkkkkkk.', 'kTTTTTTTTTTk', 'kTkkkkkkkkTk', 'kkkkkkkkkkkk', 'kkkkkkkkkkkk', 'ktttttttttTk',
+    'kttttttttTTk', 'kTTTTTTTTTTk', '.kkkkkkkkkk.' ] },
+  coin:   { scale: 2, rows: ['.kkkk.', 'kyyyyk', 'kywyok', 'kyyyok', 'kyoook', '.kkkk.'] },
+  potion: { rows: ['...kk...', '..kttk..', '..kwwk..', '.kwrrrk.', 'krrrrrrk', 'krwrrrrk', 'krrrrRRk', '.kkkkkk.'] },
+  heart:  { rows: ['.kk..kk.', 'krrkkrrk', 'krwrrrrk', 'krrrrrrk', 'krrrrrRk', '.krrrRk.', '..krRk..', '...kk...'] },
+  boots:  { rows: ['.kkkk...', '.kttk...', '.kttk...', '.kttkkk.', '.kttttTk', '.kTTTTTk', '.kkkkkkk', '........'] },
+  shard:  { rows: ['...kk...', '..koyk..', '.koyyok.', '.koyook.', '.koooRk.', '..koRk..', '...kk...', '........'] },
+  charm:  { rows: ['....kkk.', '...kyyk.', '..kyyk..', '.kyyykk.', '.kkyyyk.', '..kyyk..', '.kyyk...', '.kkk....'] },
+  fang:   { rows: ['.kkkkkk.', '.kwwwwk.', '.kwwwwk.', '.kwwwgk.', '..kwgk..', '..kwrk..', '...kk...', '........'] },
+  shield: { rows: ['kkkkkkkk', 'kggbbggk', 'kggbbggk', 'kbbbbbbk', 'kggbbGGk', '.kgbbGk.', '..kbGk..', '...kk...'] },
+  sword:  { rows: ['......kk', '.....kwk', '....kwgk', 'k..kwgk.', 'kkkwgk..', '.kykk...', 'ktkkk...', 'kk......'] },
+  bow:    { rows: ['..kkkk..', '.kttk.w.', 'ktk...w.', 'kt....w.', 'kt....w.', 'ktk...w.', '.kttk.w.', '..kkkk..'] },
+  staff:  { rows: ['.....kk.', '....koyk', '....kook', '...ktkk.', '..ktk...', '.ktk....', 'ktk.....', 'kk......'] },
+};
+
+const DEATH_COLORS = {
+  slime: ['#63c74d', '#3e8948', '#f4f4f4'], mini: ['#63c74d', '#3e8948'],
+  bat: ['#b55088', '#68386c', '#e43b44'], skeleton: ['#ead4aa', '#f4f4f4', '#9aa5b1'],
+  boss: ['#e43b44', '#f77622', '#fee761', '#a22633'],
+};
+
+function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+function buildSprite(rows, scale, flash) {
+  const c = makeCanvas(rows[0].length * scale, rows.length * scale), g = c.getContext('2d');
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] === '.') continue;
+      g.fillStyle = flash ? '#ffffff' : PALETTE[row[x]];
+      g.fillRect(x * scale, y * scale, scale, scale);
+    }
+  });
+  return c;
+}
+const SPR = {}, SPR_FLASH = {};
+for (const [name, def] of Object.entries(SPRITE_DATA)) {
+  SPR[name] = buildSprite(def.rows, def.scale || PX, false);
+  SPR_FLASH[name] = buildSprite(def.rows, def.scale || PX, true);
+}
+
+// Draws a pre-rendered sprite centred on (x, y).
+function drawSprite(g, name, x, y, flip = 1, flash = false, sx = 1, sy = 1) {
+  const img = (flash ? SPR_FLASH : SPR)[name];
+  g.save();
+  g.translate(Math.round(x), Math.round(y));
+  g.scale(flip * sx, sy);
+  g.drawImage(img, -img.width / 2, -img.height / 2);
+  g.restore();
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let rng = Math.random;                // seeded per floor; cosmetic effects use Math.random
+const rand = (a, b) => a + rng() * (b - a);
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
+const chance = p => rng() < p;
+const pick = arr => arr[Math.floor(rng() * arr.length)];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const dist = (ax, ay, bx, by) => Math.hypot(bx - ax, by - ay);
+function angleDiff(a, b) {
+  let d = (a - b) % TAU;
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
+}
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function weightedPick(weights) {
+  let total = 0;
+  for (const k in weights) total += weights[k];
+  let roll = rng() * total;
+  for (const k in weights) { roll -= weights[k]; if (roll <= 0) return k; }
+  return Object.keys(weights)[0];
+}
+function formatTime(sec) {
+  const s = Math.floor(sec);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// ============================================================
+// AUDIO  (tiny WebAudio synth — no asset files)
+// ============================================================
+const audio = { ctx: null, master: null, noiseBuf: null, muted: false };
+function initAudio() {
+  if (audio.ctx) { if (audio.ctx.state === 'suspended') audio.ctx.resume(); return; }
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audio.ctx = new AC();
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = 0.3;
+    audio.master.connect(audio.ctx.destination);
+    const len = Math.floor(audio.ctx.sampleRate * 0.5);
+    audio.noiseBuf = audio.ctx.createBuffer(1, len, audio.ctx.sampleRate);
+    const data = audio.noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  } catch (err) { audio.ctx = null; }
+}
+function tone(freq, dur, type = 'square', vol = 0.2, slideTo = 0, delay = 0) {
+  if (!audio.ctx || audio.muted) return;
+  const t = audio.ctx.currentTime + delay;
+  const osc = audio.ctx.createOscillator(), gain = audio.ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(gain); gain.connect(audio.master);
+  osc.start(t); osc.stop(t + dur + 0.02);
+}
+function noise(dur, vol = 0.2, cutoff = 1200, delay = 0) {
+  if (!audio.ctx || audio.muted) return;
+  const t = audio.ctx.currentTime + delay;
+  const src = audio.ctx.createBufferSource(), filter = audio.ctx.createBiquadFilter(), gain = audio.ctx.createGain();
+  src.buffer = audio.noiseBuf;
+  filter.type = 'lowpass'; filter.frequency.value = cutoff;
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(filter); filter.connect(gain); gain.connect(audio.master);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+const sfx = {
+  swing:  () => noise(0.09, 0.16, 2600),
+  arrow:  () => tone(900, 0.07, 'triangle', 0.18, 420),
+  orb:    () => tone(320, 0.16, 'sawtooth', 0.12, 120),
+  boom:   () => { noise(0.22, 0.3, 700); tone(120, 0.2, 'sine', 0.25, 50); },
+  hit:    () => { noise(0.05, 0.16, 1800); tone(220, 0.06, 'square', 0.1, 110); },
+  clink:  () => tone(1500, 0.05, 'square', 0.07, 900),
+  kill:   () => { tone(330, 0.12, 'square', 0.13, 80); noise(0.12, 0.16, 900); },
+  hurt:   () => { tone(160, 0.22, 'sawtooth', 0.26, 60); noise(0.15, 0.2, 600); },
+  coin:   () => { tone(1320, 0.05, 'square', 0.07); tone(1760, 0.09, 'square', 0.07, 0, 0.05); },
+  potion: () => { tone(440, 0.1, 'sine', 0.2, 660); tone(660, 0.14, 'sine', 0.2, 990, 0.1); },
+  pickup: () => { tone(523, 0.08, 'square', 0.1); tone(659, 0.08, 'square', 0.1, 0, 0.08); tone(784, 0.14, 'square', 0.1, 0, 0.16); },
+  chest:  () => { noise(0.08, 0.2, 500); tone(392, 0.1, 'triangle', 0.18, 0, 0.05); tone(587, 0.18, 'triangle', 0.18, 0, 0.14); },
+  dash:   () => noise(0.12, 0.14, 3500),
+  stairs: () => { for (let i = 0; i < 4; i++) tone(400 - i * 60, 0.12, 'triangle', 0.16, 0, i * 0.1); },
+  shoot:  () => tone(520, 0.1, 'square', 0.07, 260),
+  tell:   () => tone(180, 0.3, 'sawtooth', 0.12, 360),
+  roar:   () => { tone(90, 0.9, 'sawtooth', 0.3, 40); noise(0.8, 0.25, 400); },
+  slam:   () => { noise(0.3, 0.35, 300); tone(70, 0.3, 'sine', 0.35, 35); },
+  win:    () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'square', 0.14, 0, i * 0.14)); },
+  lose:   () => { [330, 262, 196, 131].forEach((f, i) => tone(f, 0.3, 'sawtooth', 0.16, 0, i * 0.18)); },
+};
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const world = makeCanvas(VIEW_W, VIEW_H), wctx = world.getContext('2d');     // 1:1 world layer
+const lightCanvas = makeCanvas(VIEW_W, VIEW_H), lctx = lightCanvas.getContext('2d');
+const minimap = makeCanvas(MAP_W * 2, MAP_H * 2), mctx = minimap.getContext('2d');
+let renderScale = 1;
+
+const urlSeed = new URLSearchParams(location.search).get('seed');
+const game = {
+  state: 'title',                     // title | playing | paused | transition | dead | win
+  floor: 1, seed: 0, time: 0, anim: 0,
+  shake: 0, hurtFlash: 0, endT: 0, winTimer: 0,
+  transition: null, banner: null,
+};
+let dungeon = null;                   // { tiles, explored, rooms, start, exitRoom, bossRoom, torches, gates }
+let tileArt = null;
+let flow = new Int16Array(MAP_W * MAP_H);   // BFS distance to the player, for enemy pathing
+let player = null;
+let enemies = [], bullets = [], items = [], chests = [], particles = [], numbers = [], slashes = [], toasts = [];
+let spawnQueue = [];
+let interact = null;                  // what the Use key would do right now
+let minimapDirty = true;
+const cam = { x: 0, y: 0 };
+const fovTile = { x: -1, y: -1 };
+
+const keys = {};
+const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, active: false };
+const touch = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, aimActive: false, mode: false };
+
+let best = { wins: 0, bestTime: 0, bestGold: 0 };
+try { best = Object.assign(best, JSON.parse(localStorage.getItem('emberdeep_best') || '{}')); } catch (err) { /* storage unavailable */ }
+function saveBest() { try { localStorage.setItem('emberdeep_best', JSON.stringify(best)); } catch (err) { /* ignore */ } }
+
+// ============================================================
+// DUNGEON GENERATION
+// ============================================================
+const idx = (x, y) => y * MAP_W + x;
+const inBounds = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
+const isSolidTile = t => t === T_WALL || t === T_PILLAR || t === T_GATE;
+function tileAt(tx, ty) { return inBounds(tx, ty) ? dungeon.tiles[idx(tx, ty)] : T_WALL; }
+function solidAt(px, py) { return isSolidTile(tileAt(Math.floor(px / TILE), Math.floor(py / TILE))); }
+
+// 4-way flood fill; returns steps from (sx, sy) for every reachable tile, -1 elsewhere.
+function bfs(tiles, sx, sy) {
+  const out = new Int16Array(MAP_W * MAP_H).fill(-1);
+  if (!inBounds(sx, sy)) return out;
+  const queue = new Int32Array(MAP_W * MAP_H);
+  let head = 0, tail = 0;
+  out[idx(sx, sy)] = 0;
+  queue[tail++] = idx(sx, sy);
+  while (head < tail) {
+    const c = queue[head++], cx = c % MAP_W, cy = (c / MAP_W) | 0, d = out[c] + 1;
+    for (let k = 0; k < 4; k++) {
+      const nx = cx + (k === 0 ? 1 : k === 1 ? -1 : 0), ny = cy + (k === 2 ? 1 : k === 3 ? -1 : 0);
+      if (!inBounds(nx, ny)) continue;
+      const n = idx(nx, ny);
+      if (out[n] !== -1 || isSolidTile(tiles[n])) continue;
+      out[n] = d;
+      queue[tail++] = n;
+    }
+  }
+  return out;
+}
+
+function makeRoom(x, y, w, h) {
+  return { x, y, w, h, cx: x + (w >> 1), cy: y + (h >> 1), kind: 'normal', awake: false, seen: false, sealed: false };
+}
+function roomsOverlap(a, b, pad) {
+  return a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
+}
+
+// Carves a 2-tile-wide L-shaped corridor between two room centres.
+function carveCorridor(tiles, a, b, horizFirst) {
+  let x = a.cx, y = a.cy;
+  const carve = () => {
+    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+      const i = idx(x + dx, y + dy);
+      if (tiles[i] === T_WALL) tiles[i] = T_FLOOR;
+    }
+  };
+  const walkX = () => { while (x !== b.cx) { x += Math.sign(b.cx - x); carve(); } };
+  const walkY = () => { while (y !== b.cy) { y += Math.sign(b.cy - y); carve(); } };
+  carve();
+  if (horizFirst) { walkX(); walkY(); } else { walkY(); walkX(); }
+}
+
+function tryGenerate(floor) {
+  const isBossFloor = floor === FINAL_FLOOR;
+  const tiles = new Uint8Array(MAP_W * MAP_H);          // all T_WALL
+  const rooms = [];
+  let minX = 2, maxX = MAP_W - 3;                       // columns ordinary rooms may use
+
+  if (isBossFloor) {                                    // arena hugs one side so it has a single entrance
+    const left = chance(0.5);
+    const x = left ? 3 : MAP_W - ARENA_W - 3;
+    rooms.push(makeRoom(x, randInt(3, MAP_H - ARENA_H - 4), ARENA_W, ARENA_H));
+    if (left) minX = x + ARENA_W + 4; else maxX = x - 5;
+  }
+  const target = isBossFloor ? 6 : 7 + floor;
+  for (let i = 0; i < 400 && rooms.length < target; i++) {
+    const w = randInt(7, 12), h = randInt(6, 9);
+    const x = randInt(minX, maxX - w + 1), y = randInt(2, MAP_H - h - 3);
+    const room = makeRoom(x, y, w, h);
+    if (rooms.some(o => roomsOverlap(room, o, 3))) continue;
+    rooms.push(room);
+  }
+  if (rooms.length < target) return null;
+
+  for (const r of rooms)
+    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) tiles[idx(x, y)] = T_FLOOR;
+
+  // Connect every room to its nearest already-connected neighbour (a spanning tree).
+  const order = isBossFloor ? rooms.slice(1).concat(rooms[0]) : rooms.slice();
+  for (let k = 1; k < order.length; k++) {
+    const a = order[k];
+    let nearest = order[0], nd = Infinity;
+    for (let j = 0; j < k; j++) {
+      const d = dist(a.cx, a.cy, order[j].cx, order[j].cy);
+      if (d < nd) { nd = d; nearest = order[j]; }
+    }
+    carveCorridor(tiles, a, nearest, (isBossFloor && a === rooms[0]) || chance(0.5));   // arena exits through its side wall
+  }
+  // A couple of extra links so the map has loops (never through the arena).
+  const loopPool = isBossFloor ? rooms.slice(1) : rooms;
+  for (let k = 0; k < 2; k++) {
+    const a = pick(loopPool), b = pick(loopPool);
+    if (a !== b) carveCorridor(tiles, a, b, chance(0.5));
+  }
+
+  // Start / exit are as far apart as the map allows.
+  const anchor = rooms[0];
+  const distMap = bfs(tiles, anchor.cx, anchor.cy);
+  let far = null, farD = -1;
+  for (const r of rooms) {
+    const d = distMap[idx(r.cx, r.cy)];
+    if (d < 0) return null;                             // unreachable room — reject this layout
+    if (r !== anchor && d > farD) { farD = d; far = r; }
+  }
+  let start, exitRoom = null, bossRoom = null;
+  if (isBossFloor) { start = far; bossRoom = anchor; anchor.kind = 'boss'; }
+  else { start = anchor; exitRoom = far; far.kind = 'exit'; }
+  start.kind = 'start';
+
+  // Pillars: single tiles with open floor on all 8 sides, so they can never block a path.
+  for (const r of rooms) {
+    if (r === start) continue;
+    const inset = r.kind === 'boss' ? 3 : 2;
+    if (r.kind !== 'boss' && !(r.w >= 9 && r.h >= 7 && chance(0.6))) continue;
+    for (const [px, py] of [[r.x + inset, r.y + inset], [r.x + r.w - 1 - inset, r.y + inset],
+                            [r.x + inset, r.y + r.h - 1 - inset], [r.x + r.w - 1 - inset, r.y + r.h - 1 - inset]])
+      tiles[idx(px, py)] = T_PILLAR;
+  }
+  if (exitRoom) tiles[idx(exitRoom.cx, exitRoom.cy)] = T_STAIRS;
+
+  // Wall torches along the top wall of each room.
+  const torches = [];
+  for (const r of rooms) {
+    const spots = [r.x + 2, r.x + r.w - 3];
+    if (r.w >= 11) spots.push(r.cx);
+    for (const tx of spots) {
+      if (tiles[idx(tx, r.y - 1)] !== T_WALL) continue;
+      torches.push({ tx, ty: r.y - 1, x: tx * TILE + TILE / 2, y: (r.y - 1) * TILE + 14, seed: Math.random() * 10 });
+    }
+  }
+  return { tiles, explored: new Uint8Array(MAP_W * MAP_H), rooms, start, exitRoom, bossRoom, torches, gates: [] };
+}
+
+function generateFloor(floor) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const d = tryGenerate(floor);
+    if (d) return d;
+  }
+  throw new Error('Dungeon generation failed');
+}
+
+function roomAt(tx, ty) {
+  for (const r of dungeon.rooms)
+    if (tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h) return r;
+  return null;
+}
+
+// Random open tile inside a room that is not on top of anything in `avoid`.
+function freeSpot(room, avoid) {
+  for (let i = 0; i < 60; i++) {
+    const tx = randInt(room.x + 1, room.x + room.w - 2), ty = randInt(room.y + 1, room.y + room.h - 2);
+    if (dungeon.tiles[idx(tx, ty)] !== T_FLOOR) continue;
+    const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
+    if (avoid.some(o => dist(o.x, o.y, x, y) < 30)) continue;
+    return { x, y };
+  }
+  return { x: room.cx * TILE + TILE / 2 + TILE, y: room.cy * TILE + TILE / 2 };
+}
+
+function populateFloor(floor) {
+  enemies = []; bullets = []; items = []; chests = []; particles = []; numbers = []; slashes = []; spawnQueue = [];
+  const combatRooms = shuffle(dungeon.rooms.filter(r => r.kind === 'normal'));
+  const isBossFloor = floor === FINAL_FLOOR;
+  let chestCount = 0;
+
+  for (const room of dungeon.rooms) {
+    const placed = [];
+    const cxp = room.cx * TILE + TILE / 2, cyp = room.cy * TILE + TILE / 2;
+    if (room.kind === 'start') {
+      if (isBossFloor) chests.push({ x: cxp + TILE * 2, y: cyp, opened: false, loot: 'any', potion: true });
+      continue;
+    }
+    if (room.kind === 'boss') {
+      const boss = createEnemy('boss', cxp, cyp, floor, room);
+      boss.state = 'idle'; boss.invuln = true; boss.cr = BOSS_COLLIDE_R; boss.phase2 = false;
+      boss.volley = 0; boss.dir = 0; boss.spin = 0; boss.shotT = 0; boss.lastAttack = '';
+      enemies.push(boss);
+      continue;
+    }
+    if (room.kind === 'exit') placed.push({ x: cxp, y: cyp });
+    // First two shuffled rooms always hold a chest: one weapon, one relic.
+    const order = combatRooms.indexOf(room);
+    if (room.kind === 'normal' && (order < 2 || chance(0.35))) {
+      const spot = freeSpot(room, placed);
+      placed.push(spot);
+      chests.push({ x: spot.x, y: spot.y, opened: false, loot: order === 0 ? 'weapon' : order === 1 ? 'relic' : 'any', potion: chance(0.45) });
+      chestCount++;
+    }
+    const area = (room.w - 2) * (room.h - 2);
+    const count = clamp(Math.round(area / 13) + floor - 1, 2, 7);
+    for (let i = 0; i < count; i++) {
+      const spot = freeSpot(room, placed);
+      placed.push(spot);
+      enemies.push(createEnemy(weightedPick(SPAWN_WEIGHTS[floor - 1]), spot.x, spot.y, floor, room));
+    }
+  }
+  return chestCount;
+}
+
+// ============================================================
+// TILE ART  (drawn once per floor into small canvases)
+// ============================================================
+function buildTiles(th) {
+  const art = { floor: [] };
+  const tile = draw => { const c = makeCanvas(TILE, TILE); draw(c.getContext('2d')); return c; };
+  const paintFloor = (g, v) => {
+    g.fillStyle = v % 2 ? th.floorAlt : th.floor; g.fillRect(0, 0, TILE, TILE);
+    g.fillStyle = th.line; g.fillRect(0, TILE - 2, TILE, 2); g.fillRect(TILE - 2, 0, 2, TILE);
+    for (let i = 0; i < 5; i++) {
+      g.fillStyle = i % 2 ? th.speck : th.line;
+      g.fillRect(2 + Math.floor(Math.random() * 13) * 2, 2 + Math.floor(Math.random() * 13) * 2, 2, 2);
+    }
+    if (v === 3) { g.fillStyle = th.line; for (let i = 0; i < 6; i++) g.fillRect(8 + i * 2, 10 + i * 2 + (i % 2) * 2, 2, 2); }
+  };
+  for (let v = 0; v < 4; v++) art.floor.push(tile(g => paintFloor(g, v)));
+
+  art.face = tile(g => {
+    g.fillStyle = th.face; g.fillRect(0, 0, TILE, TILE);
+    for (let row = 0; row < 4; row++) {
+      const y = row * 8, off = row % 2 ? 8 : 0;
+      g.fillStyle = th.faceDark;
+      g.fillRect(off + (row === 1 ? 2 : 18) % TILE, y, 14, 6);
+      g.fillStyle = th.mortar;
+      g.fillRect(0, y + 6, TILE, 2);
+      for (let x = off; x < TILE; x += 16) g.fillRect(x, y, 2, 6);
+    }
+    g.fillStyle = th.light; g.fillRect(0, 0, TILE, 3);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, TILE - 3, TILE, 3);
+  });
+  art.top = tile(g => {
+    g.fillStyle = th.wallTop; g.fillRect(0, 0, TILE, TILE);
+    g.fillStyle = th.mortar; g.fillRect(6, 8, 4, 2); g.fillRect(20, 22, 6, 2);
+  });
+  art.pillar = tile(g => {
+    paintFloor(g, 0);
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(4, 22, 26, 9);
+    g.fillStyle = th.mortar; g.fillRect(5, 1, 22, 28);
+    g.fillStyle = th.face; g.fillRect(7, 3, 18, 24);
+    g.fillStyle = th.faceDark; g.fillRect(19, 9, 6, 18);
+    g.fillStyle = th.light; g.fillRect(7, 3, 18, 6);
+  });
+  art.stairs = tile(g => {
+    paintFloor(g, 0);
+    g.fillStyle = th.light; g.fillRect(3, 3, 26, 26);
+    const shades = ['#3a3a44', '#2a2a33', '#1c1c24', '#101016', '#07070b'];
+    shades.forEach((col, i) => { g.fillStyle = col; g.fillRect(5, 5 + i * 4.4, 22, 5); });
+    g.fillStyle = 'rgba(255,255,255,0.12)';
+    shades.forEach((col, i) => g.fillRect(5, 5 + i * 4.4, 22, 1));
+  });
+  art.gate = tile(g => {
+    paintFloor(g, 1);
+    g.fillStyle = '#1a1423'; for (let x = 2; x < TILE; x += 8) g.fillRect(x, 0, 5, TILE);
+    g.fillStyle = '#9aa5b1'; for (let x = 3; x < TILE; x += 8) g.fillRect(x, 0, 3, TILE);
+    g.fillStyle = '#5b6470'; g.fillRect(0, 6, TILE, 3); g.fillRect(0, 22, TILE, 3);
+  });
+  return art;
+}
+
+// ============================================================
+// COLLISION & PATHING
+// ============================================================
+function collides(x, y, r) {
+  const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
+  const y0 = Math.floor((y - r) / TILE), y1 = Math.floor((y + r) / TILE);
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (isSolidTile(tileAt(tx, ty))) return true;
+  return false;
+}
+
+// Moves along one axis. If a wall corner is only just in the way, slides sideways around it instead.
+function moveAxis(e, dx, dy, r) {
+  if (!collides(e.x + dx, e.y + dy, r)) { e.x += dx; e.y += dy; return false; }
+  const step = Math.min(Math.abs(dx) + Math.abs(dy), CORNER_ASSIST);
+  for (const side of [1, -1]) {
+    const ox = dx ? 0 : side, oy = dx ? side : 0;
+    if (collides(e.x + dx + ox * CORNER_ASSIST, e.y + dy + oy * CORNER_ASSIST, r)) continue;
+    if (collides(e.x + ox * step, e.y + oy * step, r)) continue;
+    e.x += ox * step; e.y += oy * step;
+    return false;
+  }
+  return true;
+}
+
+// Axis-separated move so things slide along walls. Returns true if a wall was hit.
+function moveEntity(e, dx, dy) {
+  const r = e.cr || e.r;
+  if (collides(e.x, e.y, r)) { e.x += dx; e.y += dy; return false; }   // escape hatch: never trap something inside a wall
+  let hit = false;
+  if (dx && moveAxis(e, dx, 0, r)) hit = true;
+  if (dy && moveAxis(e, 0, dy, r)) hit = true;
+  return hit;
+}
+
+function rayClear(x0, y0, x1, y1) {
+  const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 8);
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    if (solidAt(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)) return false;
+  }
+  return true;
+}
+// Like rayClear, but for something `r` wide.
+function pathClear(x0, y0, x1, y1, r) {
+  if (!rayClear(x0, y0, x1, y1)) return false;
+  const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy) || 1, ox = -dy / d * r, oy = dx / d * r;
+  return rayClear(x0 + ox, y0 + oy, x1 + ox, y1 + oy) && rayClear(x0 - ox, y0 - oy, x1 - ox, y1 - oy);
+}
+
+// Unit vector that walks `e` toward the player: straight if the way is open, else down the flow field.
+function chaseVector(e) {
+  const dx = player.x - e.x, dy = player.y - e.y, d = Math.hypot(dx, dy);
+  if (d < 1) return [0, 0];
+  if (pathClear(e.x, e.y, player.x, player.y, (e.cr || e.r) - 1)) return [dx / d, dy / d];
+  const tx = Math.floor(e.x / TILE), ty = Math.floor(e.y / TILE);
+  let bestD = inBounds(tx, ty) && flow[idx(tx, ty)] >= 0 ? flow[idx(tx, ty)] : 32767, bx = -1, by = -1;
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    if (!ox && !oy) continue;
+    const nx = tx + ox, ny = ty + oy;
+    if (isSolidTile(tileAt(nx, ny))) continue;
+    if (ox && oy && (isSolidTile(tileAt(tx + ox, ty)) || isSolidTile(tileAt(tx, ty + oy)))) continue;   // no corner cutting
+    const f = flow[idx(nx, ny)];
+    if (f >= 0 && f < bestD) { bestD = f; bx = nx; by = ny; }
+  }
+  if (bx < 0) return [dx / d, dy / d];
+  const gx = bx * TILE + TILE / 2 - e.x, gy = by * TILE + TILE / 2 - e.y, gl = Math.hypot(gx, gy) || 1;
+  return [gx / gl, gy / gl];
+}
+
+// ============================================================
+// FOG OF WAR
+// ============================================================
+function revealTile(tx, ty) {
+  if (inBounds(tx, ty)) dungeon.explored[idx(tx, ty)] = 1;
+}
+function castReveal(x0, y0, x1, y1) {
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy, x = x0, y = y0;
+  for (;;) {
+    if (!inBounds(x, y)) return;
+    const t = dungeon.tiles[idx(x, y)];
+    dungeon.explored[idx(x, y)] = 1;
+    if (t === T_WALL || t === T_GATE) return;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++)       // light up the walls beside open floor
+      if (tileAt(x + ox, y + oy) === T_WALL) revealTile(x + ox, y + oy);
+    if (x === x1 && y === y1) return;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+}
+
+function updateFOV(force) {
+  const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+  if (!force && tx === fovTile.x && ty === fovTile.y) return;
+  fovTile.x = tx; fovTile.y = ty;
+  flow = bfs(dungeon.tiles, tx, ty);
+  const room = roomAt(tx, ty);
+  if (room) {
+    if (!room.seen) {
+      room.seen = true;
+      for (let y = room.y - 1; y <= room.y + room.h; y++)
+        for (let x = room.x - 1; x <= room.x + room.w; x++) revealTile(x, y);
+    }
+    if (!room.awake) wakeRoom(room);
+  }
+  for (let oy = -FOV_RADIUS; oy <= FOV_RADIUS; oy++)
+    for (let ox = -FOV_RADIUS; ox <= FOV_RADIUS; ox++)
+      if (ox * ox + oy * oy <= FOV_RADIUS * FOV_RADIUS) castReveal(tx, ty, tx + ox, ty + oy);
+  minimapDirty = true;
+}
+
+function wakeRoom(room) {
+  room.awake = true;
+  for (const e of enemies) {
+    if (e.room !== room || e.awake || e.type === 'boss') continue;
+    e.awake = true;
+    e.alert = 0.5;
+  }
+}
+
+// ============================================================
+// EFFECTS
+// ============================================================
+function burst(x, y, colors, n, speed = 120, life = 0.5, size = 3) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, s = speed * (0.3 + Math.random() * 0.7);
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: life * (0.6 + Math.random() * 0.6), max: life * 1.2,
+      color: Array.isArray(colors) ? colors[Math.floor(Math.random() * colors.length)] : colors, size,
+    });
+  }
+  if (particles.length > 500) particles.splice(0, particles.length - 500);
+}
+function addNumber(x, y, text, color) {
+  numbers.push({ x: x + (Math.random() - 0.5) * 12, y, text, color, life: 0.8 });
+}
+function toast(text, color = '#ffffff') {
+  toasts.push({ text, color, life: 3.2 });
+  if (toasts.length > 4) toasts.shift();
+}
+function shake(amount) { game.shake = Math.max(game.shake, amount); }
+
+// ============================================================
+// PLAYER
+// ============================================================
+function weaponDamage(w) { return Math.round(WEAPONS[w.type].dmg * RARITIES[w.rarity].mult); }
+function weaponLabel(w) { return RARITIES[w.rarity].name + ' ' + WEAPONS[w.type].name; }
+
+class Player {
+  constructor() {
+    this.x = 0; this.y = 0; this.r = PLAYER_RADIUS;
+    this.maxHp = PLAYER_MAX_HP; this.hp = this.maxHp; this.hpLag = this.hp;
+    this.weapon = { type: 'sword', rarity: 0 };
+    this.potions = 1; this.gold = 0; this.kills = 0;
+    this.relics = {};
+    this.attackCd = 0; this.dashCd = 0; this.dashT = 0; this.dashDx = 0; this.dashDy = 0;
+    this.iframes = 0; this.aim = 0; this.facing = 1;
+    this.swingT = 0; this.swingDir = 1; this.walk = 0; this.moving = false;
+    this.moveX = 0; this.moveY = 0; this.kx = 0; this.ky = 0;
+  }
+  get speed()  { return PLAYER_SPEED * (1 + 0.12 * (this.relics.boots || 0)); }
+  get dmgMul() { return 1 + 0.18 * (this.relics.shard || 0); }
+  get cdMul()  { return Math.pow(0.88, this.relics.charm || 0); }
+  get armor()  { return Math.pow(0.85, this.relics.shield || 0); }
+
+  update(dt) {
+    this.attackCd = Math.max(0, this.attackCd - dt);
+    this.dashCd = Math.max(0, this.dashCd - dt);
+    this.iframes = Math.max(0, this.iframes - dt);
+    this.swingT = Math.max(0, this.swingT - dt);
+    this.hpLag += (this.hp - this.hpLag) * Math.min(1, dt * 4);
+
+    let mx = touch.moveX, my = touch.moveY;
+    if (keys.KeyA || keys.ArrowLeft) mx -= 1;
+    if (keys.KeyD || keys.ArrowRight) mx += 1;
+    if (keys.KeyW || keys.ArrowUp) my -= 1;
+    if (keys.KeyS || keys.ArrowDown) my += 1;
+    const ml = Math.hypot(mx, my);
+    if (ml > 1) { mx /= ml; my /= ml; }
+    this.moving = ml > 0.15;
+    this.moveX = mx; this.moveY = my;
+
+    if (touch.aimActive) this.aim = Math.atan2(touch.aimY, touch.aimX);
+    else if (mouse.active) this.aim = Math.atan2(mouse.y + cam.y - this.y, mouse.x + cam.x - this.x);
+    else if (this.moving) this.aim = Math.atan2(my, mx);
+    this.facing = Math.cos(this.aim) >= 0 ? 1 : -1;
+
+    if (this.dashT > 0) {
+      this.dashT -= dt;
+      moveEntity(this, this.dashDx * DASH_SPEED * dt, this.dashDy * DASH_SPEED * dt);
+      particles.push({ x: this.x, y: this.y, vx: 0, vy: 0, life: 0.25, max: 0.25, color: '#2ce8f5', size: 5 });
+    } else if (this.moving) {
+      moveEntity(this, mx * this.speed * dt, my * this.speed * dt);
+      this.walk += dt * 11;
+    }
+    if (this.kx || this.ky) {
+      moveEntity(this, this.kx * dt, this.ky * dt);
+      const f = Math.exp(-10 * dt);
+      this.kx *= f; this.ky *= f;
+      if (Math.abs(this.kx) + Math.abs(this.ky) < 4) this.kx = this.ky = 0;
+    }
+    if ((mouse.down || touch.aimActive) && this.attackCd <= 0) this.attack();
+  }
+
+  tryDash() {
+    if (this.dashCd > 0 || this.dashT > 0) return;
+    let dx = this.moveX, dy = this.moveY;
+    const l = Math.hypot(dx, dy);
+    if (l < 0.15) { dx = Math.cos(this.aim); dy = Math.sin(this.aim); } else { dx /= l; dy /= l; }
+    this.dashDx = dx; this.dashDy = dy;
+    this.dashT = DASH_TIME; this.dashCd = DASH_COOLDOWN;
+    sfx.dash();
+  }
+
+  attack() {
+    const w = WEAPONS[this.weapon.type];
+    const dmg = weaponDamage(this.weapon) * this.dmgMul;
+    const cos = Math.cos(this.aim), sin = Math.sin(this.aim);
+    this.attackCd = w.cd * this.cdMul;
+    if (w.kind === 'melee') {
+      this.swingT = SWING_TIME; this.swingDir = -this.swingDir;
+      slashes.push({ x: this.x, y: this.y, ang: this.aim, arc: w.arc, range: w.range, life: 0.16, color: RARITIES[this.weapon.rarity].color });
+      sfx.swing();
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const d = dist(this.x, this.y, e.x, e.y);
+        if (d > w.range + e.r) continue;
+        const inArc = Math.abs(angleDiff(Math.atan2(e.y - this.y, e.x - this.x), this.aim)) <= w.arc / 2;
+        if (!inArc && d > e.r + this.r + 4) continue;
+        if (!rayClear(this.x, this.y, e.x, e.y)) continue;
+        damageEnemy(e, dmg, Math.atan2(e.y - this.y, e.x - this.x), w.knock);
+      }
+      for (const b of bullets) {                        // a good swing bats enemy shots out of the air
+        if (b.dead || !b.isEnemy || dist(this.x, this.y, b.x, b.y) > w.range + 8) continue;
+        if (Math.abs(angleDiff(Math.atan2(b.y - this.y, b.x - this.x), this.aim)) > w.arc / 2 + 0.2) continue;
+        b.dead = true;
+        burst(b.x, b.y, ['#ffffff', '#fee761'], 5, 90, 0.25, 2);
+        sfx.clink();
+      }
+    } else {
+      const isOrb = w.kind === 'orb';
+      bullets.push({
+        x: this.x + cos * 16, y: this.y + sin * 16, vx: cos * w.speed, vy: sin * w.speed,
+        r: isOrb ? 6 : 4, dmg, knock: w.knock, kind: w.kind, isEnemy: false,
+        pierce: w.pierce || 0, aoe: w.aoe || 0, hit: new Set(), life: 1.4, dead: false,
+        color: RARITIES[this.weapon.rarity].color,
+      });
+      if (isOrb) sfx.orb(); else sfx.arrow();
+    }
+  }
+
+  hurt(dmg, fromX, fromY) {
+    if (this.iframes > 0 || this.dashT > 0 || game.state !== 'playing' || game.winTimer > 0) return false;
+    dmg = Math.max(1, Math.round(dmg * this.armor));
+    this.hp -= dmg;
+    this.iframes = PLAYER_IFRAMES;
+    const a = Math.atan2(this.y - fromY, this.x - fromX);
+    this.kx = Math.cos(a) * 260; this.ky = Math.sin(a) * 260;
+    shake(8); game.hurtFlash = 0.35;
+    sfx.hurt();
+    addNumber(this.x, this.y - 22, '-' + dmg, '#ff5566');
+    burst(this.x, this.y, ['#e43b44', '#a22633'], 8, 130, 0.4, 3);
+    if (this.hp <= 0) { this.hp = 0; die(); }
+    return true;
+  }
+}
+
+function drinkPotion() {
+  if (game.state !== 'playing') return;
+  if (player.potions <= 0) { toast('No potions left!', '#ff8888'); return; }
+  if (player.hp >= player.maxHp) { toast('Already at full health', '#aaaaaa'); return; }
+  player.potions--;
+  const healed = Math.min(POTION_HEAL, player.maxHp - player.hp);
+  player.hp += healed;
+  addNumber(player.x, player.y - 22, '+' + Math.round(healed), '#63c74d');
+  burst(player.x, player.y, ['#63c74d', '#f4f4f4'], 12, 90, 0.6, 3);
+  sfx.potion();
+}
+
+// ============================================================
+// ENEMIES
+// ============================================================
+function createEnemy(type, x, y, floor, room) {
+  const s = ENEMY_STATS[type];
+  const scaled = type !== 'boss';
+  const hp = Math.round(s.hp * (scaled ? 1 + FLOOR_HP_SCALE * (floor - 1) : 1));
+  return {
+    type, x, y, r: s.r, hp, maxHp: hp,
+    speed: s.speed * (scaled ? 1 + FLOOR_SPEED_SCALE * (floor - 1) : 1),
+    dmg: Math.round(s.dmg * (scaled ? 1 + FLOOR_DMG_SCALE * (floor - 1) : 1)),
+    room, awake: false, dead: false, invuln: false,
+    state: type === 'slime' || type === 'mini' ? 'rest' : 'move',
+    timer: rand(0.1, 0.6), shootCd: rand(0.7, 1.5), strafeDir: chance(0.5) ? 1 : -1,
+    dx: 0, dy: 0, kx: 0, ky: 0, aim: 0, facing: 1,
+    flash: 0, alert: 0, anim: Math.random() * 10, seed: Math.random() * 10,
+  };
+}
+
+function damageEnemy(e, dmg, angle, knock) {
+  if (e.dead) return;
+  if (e.invuln) { sfx.clink(); burst(e.x, e.y - 8, '#9aa5b1', 3, 70, 0.2, 2); return; }
+  dmg = Math.max(1, Math.round(dmg));
+  e.hp -= dmg;
+  e.flash = 0.12;
+  if (!e.awake && e.type !== 'boss') { if (e.room) wakeRoom(e.room); e.awake = true; }
+  const k = e.type === 'boss' ? 0 : knock;
+  e.kx += Math.cos(angle) * k; e.ky += Math.sin(angle) * k;
+  addNumber(e.x, e.y - e.r - 10, String(dmg), '#ffffff');
+  burst(e.x, e.y, DEATH_COLORS[e.type], 4, 110, 0.3, 2);
+  sfx.hit();
+  if (e.hp > 0) return;
+  e.hp = 0;
+  if (e.type === 'boss') startBossDeath(e); else killEnemy(e);
+}
+
+function killEnemy(e) {
+  e.dead = true;
+  player.kills++;
+  if (player.relics.fang && player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + 2 * player.relics.fang);
+  burst(e.x, e.y, DEATH_COLORS[e.type], 14, 150, 0.55, 3);
+  sfx.kill();
+  const g = ENEMY_STATS[e.type].gold;
+  for (let i = randInt(g[0], g[1]); i > 0; i--) dropItem('gold', e.x, e.y, { value: 1 });
+  if (e.type !== 'mini' && chance(0.06)) dropItem('potion', e.x, e.y);
+  if (e.type === 'slime') {                           // big slimes split in two
+    for (const side of [-1, 1]) {
+      const m = createEnemy('mini', e.x, e.y, game.floor, e.room);
+      m.awake = true; m.kx = side * 170; m.ky = (Math.random() - 0.5) * 170; m.timer = 0.4;
+      spawnQueue.push(m);
+    }
+  }
+}
+
+function fireEnemyBullet(x, y, angle, speed, dmg, kind) {
+  bullets.push({
+    x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+    r: kind === 'arrow' ? 4 : 6, dmg, kind, isEnemy: true, life: 5, dead: false,
+  });
+}
+
+function updateSlime(e, dt) {
+  e.timer -= dt;
+  if (e.state === 'hop') {
+    moveEntity(e, e.dx * e.speed * SLIME_HOP_BOOST * dt, e.dy * e.speed * SLIME_HOP_BOOST * dt);
+    if (e.timer <= 0) { e.state = 'rest'; e.timer = rand(0.35, 0.6); }
+  } else if (e.timer <= 0) {
+    const v = chaseVector(e);
+    e.dx = v[0]; e.dy = v[1];
+    if (v[0]) e.facing = v[0] > 0 ? 1 : -1;
+    e.state = 'hop'; e.timer = SLIME_HOP_TIME;
+  }
+}
+
+function updateBat(e, dt) {
+  e.timer -= dt;
+  if (e.state === 'flee') {                           // swoop away after a bite
+    const d = dist(player.x, player.y, e.x, e.y) || 1;
+    moveEntity(e, (e.x - player.x) / d * e.speed * dt, (e.y - player.y) / d * e.speed * dt);
+    if (e.timer <= 0) e.state = 'move';
+    return;
+  }
+  const v = chaseVector(e), wob = Math.sin(e.anim * 7 + e.seed) * 0.9;
+  const dx = v[0] - v[1] * wob, dy = v[1] + v[0] * wob, l = Math.hypot(dx, dy) || 1;
+  moveEntity(e, dx / l * e.speed * dt, dy / l * e.speed * dt);
+  if (dx) e.facing = dx > 0 ? 1 : -1;
+}
+
+function updateSkeleton(e, dt) {
+  const dx = player.x - e.x, dy = player.y - e.y, d = Math.hypot(dx, dy) || 1;
+  const los = rayClear(e.x, e.y, player.x, player.y);
+  e.aim = Math.atan2(dy, dx);
+  e.facing = dx >= 0 ? 1 : -1;
+  e.shootCd -= dt;
+  if (e.state === 'aim') {
+    e.timer -= dt;
+    if (e.timer <= 0) {
+      fireEnemyBullet(e.x + Math.cos(e.aim) * 12, e.y + Math.sin(e.aim) * 12, e.aim, SKELETON_ARROW_SPEED, e.dmg, 'arrow');
+      sfx.shoot();
+      e.state = 'move'; e.shootCd = rand(1.5, 2.3);
+    }
+    return;
+  }
+  let v, strafing = false;
+  if (!los || d > SKELETON_FAR) v = chaseVector(e);
+  else if (d < SKELETON_NEAR) v = [-dx / d, -dy / d];
+  else { v = [-dy / d * e.strafeDir, dx / d * e.strafeDir]; strafing = true; }
+  const hit = moveEntity(e, v[0] * e.speed * dt, v[1] * e.speed * dt);
+  if (hit && strafing) e.strafeDir = -e.strafeDir;
+  if (los && d < SKELETON_SIGHT && e.shootCd <= 0) { e.state = 'aim'; e.timer = SKELETON_AIM_TIME; }
+}
+
+// ---- Boss: The Ember King -------------------------------------------------
+function setBoss(e, state, timer) { e.state = state; e.timer = timer; }
+
+function bossPickAttack(e) {
+  const pool = ['ring', 'fan', 'charge'];
+  if (e.phase2) {
+    pool.push('spiral');
+    if (enemies.filter(o => !o.dead && o.type === 'bat').length < 3) pool.push('summon');
+  }
+  let choice = pick(pool);
+  if (choice === e.lastAttack) choice = pick(pool);
+  e.lastAttack = choice;
+  e.volley = 0;
+  if (choice === 'ring') setBoss(e, 'ringTell', 0.6);
+  else if (choice === 'fan') setBoss(e, 'fan', 0.45);
+  else if (choice === 'charge') setBoss(e, 'chargeTell', 0.8);
+  else if (choice === 'spiral') { setBoss(e, 'spiral', 2.2); e.shotT = 0.3; }
+  else setBoss(e, 'summon', 0.7);
+  sfx.tell();
+}
+
+function updateBoss(e, dt) {
+  if (e.state === 'idle') return;
+  e.timer -= dt;
+  const dx = player.x - e.x, dy = player.y - e.y, d = Math.hypot(dx, dy) || 1, ang = Math.atan2(dy, dx);
+  if (!e.phase2 && e.hp <= e.maxHp * 0.5 && e.state !== 'dying' && e.state !== 'charge') {
+    e.phase2 = true; e.invuln = true;
+    setBoss(e, 'roar', 1.3);
+    for (const b of bullets) if (b.isEnemy) b.dead = true;
+    sfx.roar(); shake(12);
+    toast('The Ember King is enraged!', '#ff7744');
+    return;
+  }
+  switch (e.state) {
+    case 'intro': if (e.timer <= 0) { e.invuln = false; setBoss(e, 'chase', 1.0); } break;
+    case 'roar':  if (e.timer <= 0) { e.invuln = false; setBoss(e, 'chase', 0.6); } break;
+    case 'chase': {
+      const sp = e.speed * (e.phase2 ? 1.4 : 1);
+      if (d > e.r + 30) moveEntity(e, dx / d * sp * dt, dy / d * sp * dt);
+      if (e.timer <= 0) bossPickAttack(e);
+      break;
+    }
+    case 'ringTell':
+      if (e.timer <= 0) {
+        const off = e.volley % 2 ? Math.PI / BOSS_RING_COUNT : 0;
+        for (let i = 0; i < BOSS_RING_COUNT; i++)
+          fireEnemyBullet(e.x, e.y, off + i * TAU / BOSS_RING_COUNT, BOSS_RING_SPEED, BOSS_BULLET_DMG, 'orb');
+        sfx.shoot();
+        if (++e.volley < (e.phase2 ? 3 : 2)) e.timer = 0.5; else setBoss(e, 'rest', 0.8);
+      }
+      break;
+    case 'fan':
+      if (e.timer <= 0) {
+        for (let i = 0; i < BOSS_FAN_COUNT; i++)
+          fireEnemyBullet(e.x, e.y, ang + (i - (BOSS_FAN_COUNT - 1) / 2) * BOSS_FAN_SPREAD, BOSS_FAN_SPEED, BOSS_BULLET_DMG, 'orb');
+        sfx.shoot();
+        if (++e.volley < (e.phase2 ? 4 : 3)) e.timer = 0.38; else setBoss(e, 'rest', 0.8);
+      }
+      break;
+    case 'chargeTell':
+      if (e.timer > 0.2) e.dir = ang;                  // locks direction just before lunging
+      if (e.timer <= 0) { setBoss(e, 'charge', 0.8); sfx.dash(); }
+      break;
+    case 'charge': {
+      const hit = moveEntity(e, Math.cos(e.dir) * BOSS_CHARGE_SPEED * dt, Math.sin(e.dir) * BOSS_CHARGE_SPEED * dt);
+      particles.push({ x: e.x, y: e.y + 10, vx: 0, vy: 0, life: 0.3, max: 0.3, color: '#f77622', size: 8 });
+      if (hit) {                                       // slammed into a wall or pillar: stunned!
+        shake(11); sfx.slam();
+        burst(e.x + Math.cos(e.dir) * 30, e.y + Math.sin(e.dir) * 30, ['#9aa5b1', '#5b6470'], 16, 170, 0.6, 4);
+        setBoss(e, 'stun', 1.2);
+      } else if (e.timer <= 0) setBoss(e, 'rest', 0.5);
+      break;
+    }
+    case 'spiral':
+      e.spin += dt * 2.4;
+      e.shotT -= dt;
+      while (e.shotT <= 0) {
+        e.shotT += 0.1;
+        for (let k = 0; k < 3; k++) fireEnemyBullet(e.x, e.y, e.spin + k * TAU / 3, BOSS_SPIRAL_SPEED, BOSS_BULLET_DMG, 'orb');
+      }
+      if (e.timer <= 0) setBoss(e, 'rest', 1.0);
+      break;
+    case 'summon':
+      if (e.timer <= 0) {
+        for (const side of [-1, 1]) {
+          const bat = createEnemy('bat', e.x, e.y, game.floor, e.room);    // born inside the boss so never inside a wall
+          bat.awake = true; bat.alert = 0.4; bat.kx = side * 260;
+          spawnQueue.push(bat);
+          burst(bat.x, bat.y, DEATH_COLORS.bat, 10, 120, 0.4, 3);
+        }
+        setBoss(e, 'rest', 0.5);
+      }
+      break;
+    case 'stun': case 'rest':
+      if (e.timer <= 0) setBoss(e, 'chase', rand(0.9, 1.5) * (e.phase2 ? 0.7 : 1));
+      break;
+    case 'dying':
+      if (Math.random() < dt * 14) {
+        burst(e.x + (Math.random() - 0.5) * 70, e.y + (Math.random() - 0.5) * 70, DEATH_COLORS.boss, 10, 180, 0.6, 4);
+        shake(5); sfx.boom();
+      }
+      if (e.timer <= 0) finishBoss(e);
+      break;
+  }
+}
+
+function sealArena() {
+  const room = dungeon.bossRoom;
+  room.sealed = true;
+  for (let y = room.y - 1; y <= room.y + room.h; y++) for (let x = room.x - 1; x <= room.x + room.w; x++) {
+    const onRing = x === room.x - 1 || x === room.x + room.w || y === room.y - 1 || y === room.y + room.h;
+    if (onRing && tileAt(x, y) === T_FLOOR) { dungeon.tiles[idx(x, y)] = T_GATE; dungeon.gates.push(idx(x, y)); }
+  }
+  const boss = enemies.find(e => e.type === 'boss');
+  if (boss) { boss.awake = true; setBoss(boss, 'intro', 1.6); }
+  game.banner = { text: BOSS_NAME, sub: 'Lord of the Deep', life: 3, color: '#ff6644' };
+  sfx.roar(); sfx.slam(); shake(10);
+  updateFOV(true);
+}
+
+function startBossDeath(e) {
+  e.invuln = true;
+  setBoss(e, 'dying', 1.8);
+  for (const b of bullets) if (b.isEnemy) b.dead = true;
+  for (const o of enemies) if (o !== e && !o.dead && o.awake) killEnemy(o);
+}
+
+function finishBoss(e) {
+  e.dead = true;
+  player.kills++;
+  burst(e.x, e.y, DEATH_COLORS.boss, 60, 320, 1.1, 5);
+  shake(16); sfx.boom(); sfx.win();
+  for (let i = 0; i < ENEMY_STATS.boss.gold[0]; i++) dropItem('gold', e.x, e.y, { value: 2 });
+  for (const i of dungeon.gates) dungeon.tiles[i] = T_FLOOR;
+  dungeon.gates = [];
+  updateFOV(true);
+  toast('The Ember King is slain!', '#fee761');
+  game.winTimer = 3.2;
+}
+
+function updateEnemies(dt) {
+  for (const e of enemies) {
+    if (e.dead) continue;
+    e.flash = Math.max(0, e.flash - dt);
+    e.alert = Math.max(0, e.alert - dt);
+    e.anim += dt;
+    if (!e.awake) continue;
+    if (e.kx || e.ky) {
+      moveEntity(e, e.kx * dt, e.ky * dt);
+      const f = Math.exp(-9 * dt);
+      e.kx *= f; e.ky *= f;
+      if (Math.abs(e.kx) + Math.abs(e.ky) < 4) e.kx = e.ky = 0;
+    }
+    switch (e.type) {
+      case 'slime': case 'mini': updateSlime(e, dt); break;
+      case 'bat': updateBat(e, dt); break;
+      case 'skeleton': updateSkeleton(e, dt); break;
+      case 'boss': updateBoss(e, dt); break;
+    }
+    if (e.dead || e.state === 'dying' || e.state === 'idle') continue;
+    if (dist(e.x, e.y, player.x, player.y) < e.r + player.r - 3) {
+      const dmg = e.type === 'boss' && e.state === 'charge' ? BOSS_CHARGE_DMG : e.dmg;
+      if (player.hurt(dmg, e.x, e.y) && e.type === 'bat') { e.state = 'flee'; e.timer = BAT_FLEE_TIME; }
+    }
+  }
+  if (spawnQueue.length) { enemies.push(...spawnQueue); spawnQueue = []; }
+  // Keep enemies from stacking on top of each other.
+  for (let i = 0; i < enemies.length; i++) {
+    const a = enemies[i];
+    if (a.dead || !a.awake) continue;
+    for (let j = i + 1; j < enemies.length; j++) {
+      const b = enemies[j];
+      if (b.dead || !b.awake) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), min = a.r + b.r;
+      if (d >= min || d === 0) continue;
+      const push = (min - d) / 2, nx = dx / d, ny = dy / d;
+      if (a.type !== 'boss') moveEntity(a, -nx * push, -ny * push);
+      if (b.type !== 'boss') moveEntity(b, nx * push, ny * push);
+    }
+  }
+}
+
+// ============================================================
+// BULLETS
+// ============================================================
+function explodeOrb(b) {
+  burst(b.x, b.y, ['#f77622', '#fee761', '#e43b44'], 16, 170, 0.45, 4);
+  slashes.push({ x: b.x, y: b.y, ang: 0, arc: TAU, range: b.aoe, life: 0.18, color: '#f77622', ring: true });
+  sfx.boom(); shake(2);
+  for (const e of enemies) {
+    if (e.dead || dist(b.x, b.y, e.x, e.y) > b.aoe + e.r) continue;
+    damageEnemy(e, b.dmg, Math.atan2(e.y - b.y, e.x - b.x), b.knock);
+  }
+}
+
+function updateBullets(dt) {
+  for (const b of bullets) {
+    if (b.dead) continue;
+    b.life -= dt;
+    if (b.life <= 0) { b.dead = true; continue; }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (solidAt(b.x, b.y)) {
+      b.dead = true;
+      if (b.kind === 'orb' && !b.isEnemy) explodeOrb(b);
+      else burst(b.x - b.vx * dt, b.y - b.vy * dt, b.isEnemy ? '#f77622' : '#c8ccd4', 4, 70, 0.25, 2);
+      continue;
+    }
+    if (b.isEnemy) {
+      if (dist(b.x, b.y, player.x, player.y) < b.r + player.r - 2 && player.hurt(b.dmg, b.x - b.vx * 0.05, b.y - b.vy * 0.05)) b.dead = true;
+      continue;
+    }
+    for (const e of enemies) {
+      if (e.dead || b.hit.has(e) || dist(b.x, b.y, e.x, e.y) > b.r + e.r) continue;
+      if (b.kind === 'orb') { explodeOrb(b); b.dead = true; break; }
+      damageEnemy(e, b.dmg, Math.atan2(b.vy, b.vx), b.knock);
+      b.hit.add(e);
+      if (b.pierce-- <= 0) { b.dead = true; break; }
+    }
+  }
+}
+
+// ============================================================
+// LOOT
+// ============================================================
+function dropItem(kind, x, y, extra) {
+  const a = Math.random() * TAU, s = 80 + Math.random() * 120;
+  items.push(Object.assign({ kind, x, y, r: 5, vx: Math.cos(a) * s, vy: Math.sin(a) * s, age: 0, dead: false, seed: Math.random() * 10 }, extra));
+}
+
+function rollWeapon(floor) {
+  const odds = RARITY_ODDS[floor - 1];
+  const roll = () => {
+    const r = rng();
+    return { type: pick(WEAPON_KEYS), rarity: r < odds[0] ? 0 : r < odds[0] + odds[1] ? 1 : 2 };
+  };
+  let w = roll();
+  if (w.type === player.weapon.type && w.rarity <= player.weapon.rarity) w = roll();   // fewer duds
+  return w;
+}
+
+function openChest(c) {
+  c.opened = true;
+  sfx.chest();
+  burst(c.x, c.y - 6, ['#fee761', '#f77622', '#f4f4f4'], 18, 150, 0.6, 3);
+  for (let i = randInt(5, 9); i > 0; i--) dropItem('gold', c.x, c.y, { value: randInt(1, 3) });
+  if (c.potion) dropItem('potion', c.x, c.y);
+  const kind = c.loot === 'any' ? (chance(0.55) ? 'weapon' : 'relic') : c.loot;
+  if (kind === 'weapon') dropItem('weapon', c.x, c.y, { weapon: rollWeapon(game.floor) });
+  else dropItem('relic', c.x, c.y, { relic: pick(RELIC_KEYS) });
+}
+
+function collectItem(it) {
+  switch (it.kind) {
+    case 'gold':
+      player.gold += it.value; sfx.coin(); break;
+    case 'potion':
+      if (player.potions >= POTION_MAX) return false;
+      player.potions++; sfx.pickup(); toast('Health Potion  (' + (touch.mode ? 'POTION' : 'Q') + ' to drink)', '#ff7788'); break;
+    case 'relic': {
+      const r = RELICS[it.relic];
+      player.relics[it.relic] = (player.relics[it.relic] || 0) + 1;
+      if (it.relic === 'heart') { player.maxHp += 25; player.hp += 25; }
+      sfx.pickup(); toast(r.name + ' — ' + r.desc, '#fee761');
+      burst(it.x, it.y, ['#fee761', '#f4f4f4'], 12, 110, 0.5, 3);
+      break;
+    }
+    default: return false;                            // weapons are swapped with the Use key
+  }
+  return true;
+}
+
+function updateItems(dt) {
+  interact = null;
+  let nearestWeapon = null, nearestD = WEAPON_REACH;
+  for (const it of items) {
+    if (it.dead) continue;
+    it.age += dt;
+    if (it.vx || it.vy) {
+      moveEntity(it, it.vx * dt, it.vy * dt);
+      const f = Math.exp(-6 * dt);
+      it.vx *= f; it.vy *= f;
+      if (Math.abs(it.vx) + Math.abs(it.vy) < 3) it.vx = it.vy = 0;
+    }
+    const d = dist(it.x, it.y, player.x, player.y);
+    if (it.kind === 'gold' && it.age > 0.4 && d < MAGNET_RADIUS && d > 1) {
+      const pull = Math.min(d, 420 * dt);
+      moveEntity(it, (player.x - it.x) / d * pull, (player.y - it.y) / d * pull);
+    }
+    if (it.kind === 'weapon') { if (it.age > 0.3 && d < nearestD) { nearestD = d; nearestWeapon = it; } continue; }
+    if (it.age > 0.35 && d < PICKUP_RADIUS && collectItem(it)) it.dead = true;
+  }
+  for (const c of chests)
+    if (!c.opened && dist(c.x, c.y, player.x, player.y) < 26) openChest(c);
+
+  if (nearestWeapon) interact = { type: 'weapon', item: nearestWeapon };
+  else if (tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) === T_STAIRS) interact = { type: 'stairs' };
+}
+
+function useInteract() {
+  if (game.state !== 'playing' || !interact) return;
+  if (interact.type === 'weapon') {
+    const it = interact.item, old = player.weapon;
+    player.weapon = it.weapon;
+    it.weapon = old; it.age = 0;                      // your old weapon stays on the floor
+    player.attackCd = 0.2;
+    sfx.pickup();
+    toast('Equipped ' + weaponLabel(player.weapon), RARITIES[player.weapon.rarity].color);
+  } else if (interact.type === 'stairs') {
+    sfx.stairs();
+    game.state = 'transition';
+    game.transition = { t: 0, phase: 'out', next: game.floor + 1 };
+  }
+}
+
+// ============================================================
+// RUN FLOW
+// ============================================================
+function newRun() {
+  game.seed = urlSeed !== null ? (Number(urlSeed) | 0) : (Math.random() * 0x7fffffff) | 0;
+  game.time = 0; game.shake = 0; game.hurtFlash = 0; game.endT = 0; game.winTimer = 0;
+  game.transition = null;
+  toasts = [];
+  player = new Player();
+  enterFloor(1);
+  game.state = 'playing';
+}
+
+function enterFloor(n) {
+  game.floor = n;
+  rng = mulberry32(game.seed + n * 7919);
+  dungeon = generateFloor(n);
+  tileArt = buildTiles(THEMES[n - 1]);
+  populateFloor(n);
+  player.x = dungeon.start.cx * TILE + TILE / 2;
+  player.y = dungeon.start.cy * TILE + TILE / 2;
+  player.kx = player.ky = 0; player.dashT = 0;
+  cam.x = player.x - VIEW_W / 2; cam.y = player.y - VIEW_H / 2;
+  interact = null;
+  updateFOV(true);
+  game.banner = { text: n === FINAL_FLOOR ? 'Final Floor' : 'Floor ' + n, sub: THEMES[n - 1].name, life: 3, color: '#ffffff' };
+}
+
+function die() {
+  game.state = 'dead'; game.endT = 0;
+  burst(player.x, player.y, ['#3a86ff', '#9aa5b1', '#e43b44'], 30, 200, 0.9, 4);
+  sfx.lose();
+  best.bestGold = Math.max(best.bestGold, player.gold);
+  saveBest();
+}
+
+function win() {
+  game.state = 'win'; game.endT = 0;
+  best.wins++;
+  best.bestGold = Math.max(best.bestGold, player.gold);
+  if (!best.bestTime || game.time < best.bestTime) best.bestTime = game.time;
+  saveBest();
+}
+
+function togglePause() {
+  if (game.state === 'playing') game.state = 'paused';
+  else if (game.state === 'paused') game.state = 'playing';
+}
+
+function primaryAction() {
+  if (game.state === 'title') newRun();
+  else if ((game.state === 'dead' || game.state === 'win') && game.endT > 0.9) newRun();
+  else if (game.state === 'paused') togglePause();
+}
+
+// ============================================================
+// UPDATE
+// ============================================================
+function updateEffects(dt) {
+  for (const p of particles) {
+    p.life -= dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    const f = Math.exp(-4 * dt);
+    p.vx *= f; p.vy *= f;
+  }
+  for (const n of numbers) { n.life -= dt; n.y -= 38 * dt; }
+  for (const s of slashes) s.life -= dt;
+  for (const t of toasts) t.life -= dt;
+  particles = particles.filter(p => p.life > 0);
+  numbers = numbers.filter(n => n.life > 0);
+  slashes = slashes.filter(s => s.life > 0);
+  toasts = toasts.filter(t => t.life > 0);
+  game.shake = Math.max(0, game.shake - dt * 30);
+  game.hurtFlash = Math.max(0, game.hurtFlash - dt);
+  if (game.banner && (game.banner.life -= dt) <= 0) game.banner = null;
+}
+
+function update(dt) {
+  game.anim += dt;
+  if (game.state === 'title' || game.state === 'paused') return;
+  if (game.state === 'transition') {
+    const tr = game.transition;
+    tr.t += dt;
+    if (tr.phase === 'out' && tr.t >= 0.5) { enterFloor(tr.next); tr.phase = 'in'; tr.t = 0; }
+    else if (tr.phase === 'in' && tr.t >= 0.5) { game.transition = null; game.state = 'playing'; }
+    return;
+  }
+  if (game.state === 'dead' || game.state === 'win') { game.endT += dt; updateEffects(dt); return; }
+
+  game.time += dt;
+  player.update(dt);
+  updateFOV(false);
+  const br = dungeon.bossRoom;
+  if (br && !br.sealed) {
+    const tx = player.x / TILE, ty = player.y / TILE;
+    if (tx > br.x + 1.2 && tx < br.x + br.w - 1.2 && ty > br.y + 1.2 && ty < br.y + br.h - 1.2) sealArena();
+  }
+  updateEnemies(dt);
+  updateBullets(dt);
+  updateItems(dt);
+  updateEffects(dt);
+  enemies = enemies.filter(e => !e.dead);
+  bullets = bullets.filter(b => !b.dead);
+  items = items.filter(it => !it.dead);
+
+  // Camera leans a little toward where you are aiming.
+  const lookX = mouse.active ? (mouse.x - VIEW_W / 2) * 0.12 : 0, lookY = mouse.active ? (mouse.y - VIEW_H / 2) * 0.12 : 0;
+  const k = Math.min(1, dt * 10);
+  cam.x += (player.x + lookX - VIEW_W / 2 - cam.x) * k;
+  cam.y += (player.y + lookY - VIEW_H / 2 - cam.y) * k;
+
+  if (game.winTimer > 0 && game.state === 'playing' && (game.winTimer -= dt) <= 0) win();
+}
+
+// ============================================================
+// RENDER — WORLD
+// ============================================================
+const FLOOR_VARIANTS = [0, 1, 0, 1, 2, 0, 1, 2, 0, 3, 1];   // cracked tiles (3) stay rare
+function drawTiles(g, cx, cy) {
+  const x0 = Math.max(0, Math.floor(cx / TILE)), x1 = Math.min(MAP_W - 1, Math.floor((cx + VIEW_W) / TILE));
+  const y0 = Math.max(0, Math.floor(cy / TILE)), y1 = Math.min(MAP_H - 1, Math.floor((cy + VIEW_H) / TILE));
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const i = idx(tx, ty);
+    if (!dungeon.explored[i]) continue;
+    const t = dungeon.tiles[i], px = tx * TILE, py = ty * TILE;
+    if (t === T_WALL) {
+      const below = ty + 1 < MAP_H ? dungeon.tiles[i + MAP_W] : T_WALL;
+      g.drawImage(below !== T_WALL ? tileArt.face : tileArt.top, px, py);
+      continue;
+    }
+    if (t === T_PILLAR) g.drawImage(tileArt.pillar, px, py);
+    else if (t === T_STAIRS) g.drawImage(tileArt.stairs, px, py);
+    else if (t === T_GATE) g.drawImage(tileArt.gate, px, py);
+    else g.drawImage(tileArt.floor[FLOOR_VARIANTS[(((tx * 73856093) ^ (ty * 19349663)) >>> 0) % FLOOR_VARIANTS.length]], px, py);
+    if (ty > 0 && dungeon.tiles[i - MAP_W] === T_WALL) {       // soft shadow under walls
+      g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(px, py, TILE, 5);
+      g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(px, py + 5, TILE, 5);
+    }
+  }
+  if (dungeon.exitRoom) {                                        // stairs shimmer
+    const s = dungeon.exitRoom;
+    if (dungeon.explored[idx(s.cx, s.cy)]) {
+      g.fillStyle = `rgba(254,231,97,${0.1 + 0.08 * Math.sin(game.anim * 4)})`;
+      g.fillRect(s.cx * TILE + 3, s.cy * TILE + 3, 26, 26);
+    }
+  }
+}
+
+function drawTorches(g) {
+  for (const t of dungeon.torches) {
+    if (!dungeon.explored[idx(t.tx, t.ty)]) continue;
+    const f = Math.floor(game.anim * 9 + t.seed) % 3;
+    g.fillStyle = '#733e39'; g.fillRect(t.x - 2, t.y + 2, 4, 10);
+    g.fillStyle = '#1a1423'; g.fillRect(t.x - 4, t.y, 8, 3);
+    g.fillStyle = '#f77622'; g.fillRect(t.x - 4, t.y - 8 - f, 8, 8 + f);
+    g.fillStyle = '#fee761'; g.fillRect(t.x - 2, t.y - 5 - (f === 1 ? 2 : 0), 4, 5);
+  }
+}
+
+function drawShadow(g, x, y, w) {
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  g.beginPath(); g.ellipse(x, y, w, w * 0.4, 0, 0, TAU); g.fill();
+}
+
+function drawItem(g, it) {
+  const bob = Math.sin(game.anim * 4 + it.seed) * 2;
+  drawShadow(g, it.x, it.y + 8, it.kind === 'gold' ? 5 : 9);
+  if (it.kind === 'gold') { drawSprite(g, 'coin', it.x, it.y + bob * 0.5); return; }
+  if (it.kind === 'weapon') {
+    g.fillStyle = RARITIES[it.weapon.rarity].color;
+    g.globalAlpha = 0.25 + 0.12 * Math.sin(game.anim * 5 + it.seed);
+    g.beginPath(); g.arc(it.x, it.y, 17, 0, TAU); g.fill();
+    g.globalAlpha = 1;
+    drawSprite(g, WEAPONS[it.weapon.type].icon, it.x, it.y - 2 + bob);
+    return;
+  }
+  if (it.kind === 'relic') {
+    g.fillStyle = '#fee761'; g.globalAlpha = 0.2 + 0.1 * Math.sin(game.anim * 5 + it.seed);
+    g.beginPath(); g.arc(it.x, it.y, 16, 0, TAU); g.fill();
+    g.globalAlpha = 1;
+  }
+  drawSprite(g, it.kind === 'relic' ? it.relic : 'potion', it.x, it.y - 2 + bob);
+}
+
+function drawHeldWeapon(g, p) {
+  const w = WEAPONS[p.weapon.type], col = RARITIES[p.weapon.rarity].color;
+  g.save();
+  g.translate(Math.round(p.x), Math.round(p.y) + 2);
+  if (w.kind === 'melee') {
+    const k = p.swingT > 0 ? 1 - p.swingT / SWING_TIME : 1;
+    g.rotate(p.aim + (k - 0.5) * w.arc * p.swingDir * (p.swingT > 0 ? 1 : 0.6));
+    g.fillStyle = '#733e39'; g.fillRect(6, -2, 6, 4);
+    g.fillStyle = '#fee761'; g.fillRect(11, -6, 3, 12);
+    g.fillStyle = '#1a1423'; g.fillRect(14, -3, 23, 6);
+    g.fillStyle = '#dfe6ee'; g.fillRect(14, -2, 22, 4);
+    g.fillStyle = col; g.fillRect(14, -1, 22, 1);
+  } else if (w.kind === 'arrow') {
+    g.rotate(p.aim);
+    g.strokeStyle = '#1a1423'; g.lineWidth = 5; g.beginPath(); g.arc(8, 0, 13, -1.15, 1.15); g.stroke();
+    g.strokeStyle = col; g.lineWidth = 3; g.beginPath(); g.arc(8, 0, 13, -1.15, 1.15); g.stroke();
+    const pull = p.attackCd > 0 ? 0 : 5;
+    g.strokeStyle = '#f4f4f4'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(13.3, -11.9); g.lineTo(13.3 - pull, 0); g.lineTo(13.3, 11.9); g.stroke();
+  } else {
+    g.rotate(p.aim);
+    g.fillStyle = '#1a1423'; g.fillRect(3, -3, 24, 6);
+    g.fillStyle = '#b86f50'; g.fillRect(4, -2, 22, 4);
+    g.fillStyle = col; g.beginPath(); g.arc(28, 0, 6, 0, TAU); g.fill();
+    g.fillStyle = '#f77622'; g.beginPath(); g.arc(28, 0, 4 + Math.sin(game.anim * 10), 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+function drawPlayer(g) {
+  const p = player;
+  if (game.state === 'dead') return;
+  drawShadow(g, p.x, p.y + 12, 11);
+  const blink = p.iframes > 0 && Math.floor(game.anim * 20) % 2 === 0;
+  const bob = p.moving ? Math.abs(Math.sin(p.walk)) * 3 : 0;
+  const behind = Math.sin(p.aim) < -0.3;
+  g.globalAlpha = blink ? 0.4 : 1;
+  if (behind) drawHeldWeapon(g, p);
+  drawSprite(g, 'player', p.x, p.y - 6 - bob, p.facing, false, p.dashT > 0 ? 1.15 : 1, p.dashT > 0 ? 0.9 : 1);
+  if (!behind) drawHeldWeapon(g, p);
+  g.globalAlpha = 1;
+}
+
+function drawEnemy(g, e) {
+  const flash = e.flash > 0;
+  switch (e.type) {
+    case 'slime': case 'mini': {
+      const s = e.type === 'mini' ? 0.62 : 1;
+      let sx = 1 + 0.06 * Math.sin(e.anim * 5), sy = 1 - 0.06 * Math.sin(e.anim * 5), lift = 0;
+      if (e.state === 'hop' && e.awake) {
+        const k = 1 - clamp(e.timer / SLIME_HOP_TIME, 0, 1);
+        lift = Math.sin(k * Math.PI) * 9; sx = 0.9; sy = 1.14;
+      }
+      drawShadow(g, e.x, e.y + e.r - 2, e.r);
+      drawSprite(g, 'slime', e.x, e.y - 4 * s - lift, e.facing, flash, sx * s, sy * s);
+      break;
+    }
+    case 'bat':
+      drawShadow(g, e.x, e.y + 12, 7);
+      drawSprite(g, e.awake && Math.floor(e.anim * 9) % 2 ? 'batB' : 'batA', e.x, e.y - 8 + Math.sin(e.anim * 6) * 2, e.facing, flash);
+      break;
+    case 'skeleton': {
+      drawShadow(g, e.x, e.y + 13, 10);
+      drawSprite(g, 'skeleton', e.x, e.y - 5, e.facing, flash);
+      g.save();
+      g.translate(Math.round(e.x), Math.round(e.y)); g.rotate(e.aim);
+      g.strokeStyle = '#1a1423'; g.lineWidth = 4; g.beginPath(); g.arc(6, 0, 11, -1.1, 1.1); g.stroke();
+      g.strokeStyle = e.state === 'aim' ? '#f77622' : '#b86f50'; g.lineWidth = 2; g.beginPath(); g.arc(6, 0, 11, -1.1, 1.1); g.stroke();
+      g.restore();
+      break;
+    }
+    case 'boss': {
+      drawShadow(g, e.x, e.y + 34, 34);
+      let ox = 0, oy = 0;
+      if (e.state === 'ringTell' || e.state === 'chargeTell' || e.state === 'roar' || e.state === 'dying') {
+        ox = (Math.random() - 0.5) * 5; oy = (Math.random() - 0.5) * 5;
+      }
+      if (e.phase2 && e.state !== 'dying') {
+        g.fillStyle = `rgba(247,118,34,${0.18 + 0.08 * Math.sin(game.anim * 8)})`;
+        g.beginPath(); g.arc(e.x, e.y - 4, 52, 0, TAU); g.fill();
+      }
+      const dim = e.state === 'stun';
+      drawSprite(g, 'boss', e.x + ox, e.y - 6 + oy + Math.sin(e.anim * 2.5) * 3, 1,
+        flash || (e.state === 'dying' && Math.floor(game.anim * 16) % 2 === 0), 1, dim ? 0.92 : 1);
+      if (dim) {                                       // dizzy stars
+        for (let k = 0; k < 3; k++) {
+          const a = game.anim * 5 + k * TAU / 3;
+          g.fillStyle = '#fee761'; g.fillRect(e.x + Math.cos(a) * 26 - 2, e.y - 52 + Math.sin(a) * 6, 5, 5);
+        }
+      }
+      break;
+    }
+  }
+  if (e.alert > 0 || (e.type === 'skeleton' && e.state === 'aim')) {
+    g.font = 'bold 18px "Courier New", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#1a1423'; g.fillText('!', e.x + 1, e.y - e.r - 21);
+    g.fillStyle = e.alert > 0 ? '#fee761' : '#ff5544'; g.fillText('!', e.x, e.y - e.r - 22);
+  }
+  if (e.type !== 'boss' && e.hp < e.maxHp) {
+    const w = 26, hx = Math.round(e.x - w / 2), hy = Math.round(e.y - e.r - 14);
+    g.fillStyle = '#1a1423'; g.fillRect(hx - 1, hy - 1, w + 2, 5);
+    g.fillStyle = '#e43b44'; g.fillRect(hx, hy, Math.ceil(w * e.hp / e.maxHp), 3);
+  }
+}
+
+function drawBossTelegraph(g, e) {
+  if (e.state === 'chargeTell') {
+    const a = 0.15 + 0.2 * (1 - clamp(e.timer / 0.8, 0, 1));
+    g.save();
+    g.translate(e.x, e.y); g.rotate(e.dir);
+    g.fillStyle = `rgba(228,59,68,${a})`; g.fillRect(0, -26, 460, 52);
+    g.restore();
+  } else if (e.state === 'ringTell' && e.volley === 0) {
+    g.strokeStyle = `rgba(247,118,34,${0.5})`; g.lineWidth = 3;
+    g.beginPath(); g.arc(e.x, e.y, 40 + (0.6 - e.timer) * 70, 0, TAU); g.stroke();
+  }
+}
+
+function drawBullet(g, b) {
+  if (b.kind === 'arrow') {
+    const a = Math.atan2(b.vy, b.vx);
+    g.save();
+    g.translate(b.x, b.y); g.rotate(a);
+    g.fillStyle = '#1a1423'; g.fillRect(-10, -2, 18, 4);
+    g.fillStyle = b.isEnemy ? '#ead4aa' : '#f4f4f4'; g.fillRect(-9, -1, 15, 2);
+    g.fillStyle = b.isEnemy ? '#e43b44' : b.color; g.fillRect(4, -3, 5, 6);
+    g.restore();
+  } else {
+    g.fillStyle = b.isEnemy ? '#a22633' : '#f77622';
+    g.beginPath(); g.arc(b.x, b.y, b.r + 2, 0, TAU); g.fill();
+    g.fillStyle = b.isEnemy ? '#f77622' : '#fee761';
+    g.beginPath(); g.arc(b.x, b.y, b.r - 1, 0, TAU); g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(b.x - 1, b.y - 1, 2, 0, TAU); g.fill();
+  }
+}
+
+function punchLight(x, y, r, strength) {
+  const gr = lctx.createRadialGradient(x, y, r * 0.1, x, y, r);
+  gr.addColorStop(0, `rgba(0,0,0,${strength})`);
+  gr.addColorStop(0.55, `rgba(0,0,0,${strength * 0.9})`);
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  lctx.fillStyle = gr;
+  lctx.beginPath(); lctx.arc(x, y, r, 0, TAU); lctx.fill();
+}
+
+function drawLighting(g, cx, cy) {
+  lctx.globalCompositeOperation = 'source-over';
+  lctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  lctx.fillStyle = 'rgba(4,3,10,0.93)';
+  lctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  lctx.globalCompositeOperation = 'destination-out';
+  punchLight(player.x - cx, player.y - cy, LIGHT_RADIUS + Math.sin(game.anim * 3) * 5, 1);
+  const lit = [];
+  for (const t of dungeon.torches) {
+    if (!dungeon.explored[idx(t.tx, t.ty)]) continue;
+    const x = t.x - cx, y = t.y - cy + 12;
+    if (x < -150 || y < -150 || x > VIEW_W + 150 || y > VIEW_H + 150) continue;
+    const r = 125 + Math.sin(game.anim * 11 + t.seed) * 6;
+    punchLight(x, y, r, 0.85);
+    lit.push([x, y, r]);
+  }
+  for (const b of bullets) if (b.kind === 'orb') punchLight(b.x - cx, b.y - cy, 46, 0.7);
+  for (const e of enemies) if (e.type === 'boss' && e.awake) punchLight(e.x - cx, e.y - cy, 210, 0.85);
+  g.drawImage(lightCanvas, 0, 0);
+  g.globalCompositeOperation = 'lighter';                         // warm torch glow
+  for (const [x, y, r] of lit) {
+    const gr = g.createRadialGradient(x, y, 4, x, y, r);
+    gr.addColorStop(0, 'rgba(255,150,50,0.2)'); gr.addColorStop(1, 'rgba(255,120,30,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+
+function drawWorld(g) {
+  const sh = game.shake;
+  const cx = Math.round(cam.x + (Math.random() - 0.5) * sh), cy = Math.round(cam.y + (Math.random() - 0.5) * sh);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#05040a'; g.fillRect(0, 0, VIEW_W, VIEW_H);
+  g.setTransform(1, 0, 0, 1, -cx, -cy);
+  drawTiles(g, cx, cy);
+  drawTorches(g);
+  for (const e of enemies) if (e.type === 'boss') drawBossTelegraph(g, e);
+
+  // Everything standing on the floor, sorted so lower things overlap higher ones.
+  const list = [];
+  for (const c of chests) if (dungeon.explored[idx(Math.floor(c.x / TILE), Math.floor(c.y / TILE))]) list.push({ y: c.y, kind: 0, o: c });
+  for (const it of items) if (dungeon.explored[idx(Math.floor(it.x / TILE), Math.floor(it.y / TILE))]) list.push({ y: it.y - 4, kind: 1, o: it });
+  for (const e of enemies) if (dungeon.explored[idx(clamp(Math.floor(e.x / TILE), 0, MAP_W - 1), clamp(Math.floor(e.y / TILE), 0, MAP_H - 1))]) list.push({ y: e.y, kind: 2, o: e });
+  list.push({ y: player.y, kind: 3, o: player });
+  list.sort((a, b) => a.y - b.y);
+  for (const d of list) {
+    if (d.kind === 0) { drawShadow(g, d.o.x, d.o.y + 11, 15); drawSprite(g, d.o.opened ? 'chestOpen' : 'chest', d.o.x, d.o.y); }
+    else if (d.kind === 1) drawItem(g, d.o);
+    else if (d.kind === 2) drawEnemy(g, d.o);
+    else drawPlayer(g);
+  }
+  for (const b of bullets) drawBullet(g, b);
+  for (const s of slashes) {
+    const k = clamp(s.life / 0.16, 0, 1);
+    g.globalAlpha = k * 0.85; g.strokeStyle = s.ring ? s.color : '#ffffff';
+    if (s.ring) { g.lineWidth = 4; g.beginPath(); g.arc(s.x, s.y, s.range * (1.1 - k * 0.5), 0, TAU); g.stroke(); }
+    else {
+      g.lineWidth = 9 * k + 2; g.beginPath(); g.arc(s.x, s.y, s.range * 0.78, s.ang - s.arc / 2, s.ang + s.arc / 2); g.stroke();
+      g.strokeStyle = s.color; g.lineWidth = 2; g.beginPath(); g.arc(s.x, s.y, s.range * 0.92, s.ang - s.arc / 2, s.ang + s.arc / 2); g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+  for (const p of particles) {
+    g.globalAlpha = clamp(p.life / p.max, 0, 1);
+    g.fillStyle = p.color;
+    g.fillRect(Math.round(p.x - p.size / 2), Math.round(p.y - p.size / 2), p.size, p.size);
+  }
+  g.globalAlpha = 1;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  drawLighting(g, cx, cy);
+  if (game.hurtFlash > 0) {
+    const gr = g.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 180, VIEW_W / 2, VIEW_H / 2, 520);
+    gr.addColorStop(0, 'rgba(228,59,68,0)'); gr.addColorStop(1, `rgba(228,59,68,${game.hurtFlash * 1.4})`);
+    g.fillStyle = gr; g.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
+  return [cx, cy];
+}
+
+// ============================================================
+// RENDER — HUD & SCREENS  (drawn at full display resolution)
+// ============================================================
+const FONT = '"Courier New", Courier, monospace';
+const TITLE_FONT = 'Georgia, "Times New Roman", serif';
+function text(g, str, x, y, size, color, align = 'left', font = FONT) {
+  g.font = `bold ${size}px ${font}`;
+  g.textAlign = align; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(0,0,0,0.8)'; g.fillText(str, x + 1, y + 2);
+  g.fillStyle = color; g.fillText(str, x, y);
+}
+function icon(g, name, x, y, size) {            // sprite scaled to fit a size×size box centred on (x, y)
+  const img = SPR[name], s = size / Math.max(img.width, img.height);
+  g.drawImage(img, x - img.width * s / 2, y - img.height * s / 2, img.width * s, img.height * s);
+}
+
+function drawMinimap(g) {
+  if (minimapDirty) {
+    minimapDirty = false;
+    mctx.clearRect(0, 0, minimap.width, minimap.height);
+    for (let ty = 0; ty < MAP_H; ty++) for (let tx = 0; tx < MAP_W; tx++) {
+      if (!dungeon.explored[idx(tx, ty)]) continue;
+      const t = dungeon.tiles[idx(tx, ty)];
+      mctx.fillStyle = t === T_WALL ? '#34364e' : t === T_STAIRS ? '#fee761' : t === T_GATE ? '#e43b44' : t === T_PILLAR ? '#5b6080' : '#8b90b4';
+      mctx.fillRect(tx * 2, ty * 2, 2, 2);
+    }
+  }
+  const s = 1.5, w = minimap.width * s, h = minimap.height * s, x = VIEW_W - w - 12, y = 12;
+  g.fillStyle = 'rgba(8,6,14,0.72)'; g.fillRect(x - 3, y - 3, w + 6, h + 6);
+  g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 1; g.strokeRect(x - 2.5, y - 2.5, w + 5, h + 5);
+  g.drawImage(minimap, x, y, w, h);
+  const dot = (wx, wy, col, size) => { g.fillStyle = col; g.fillRect(x + wx / TILE * 2 * s - size / 2, y + wy / TILE * 2 * s - size / 2, size, size); };
+  for (const c of chests) if (!c.opened && dungeon.explored[idx(Math.floor(c.x / TILE), Math.floor(c.y / TILE))]) dot(c.x, c.y, '#f77622', 4);
+  for (const e of enemies) if (e.type === 'boss' && e.awake) dot(e.x, e.y, '#e43b44', 6);
+  if (Math.floor(game.anim * 4) % 2) dot(player.x, player.y, '#ffffff', 5); else dot(player.x, player.y, '#2ce8f5', 5);
+  text(g, (game.floor === FINAL_FLOOR ? 'Final Floor' : 'Floor ' + game.floor + '/' + FINAL_FLOOR), x + w, y + h + 16, 12, '#c8ccd4', 'right');
+  text(g, THEMES[game.floor - 1].name, x + w, y + h + 31, 11, '#8b90b4', 'right');
+}
+
+function drawHUD(g) {
+  const p = player, x = 14, y = 46, w = 190;
+  g.fillStyle = 'rgba(8,6,14,0.72)'; g.fillRect(x - 6, y - 6, w + 12, 94);
+  // Health
+  g.fillStyle = '#2a1418'; g.fillRect(x, y, w, 18);
+  g.fillStyle = '#f4f4f4'; g.fillRect(x, y, w * clamp(p.hpLag / p.maxHp, 0, 1), 18);
+  g.fillStyle = p.hp / p.maxHp < 0.3 && Math.floor(game.anim * 6) % 2 ? '#ff7b84' : '#e43b44';
+  g.fillRect(x, y, w * clamp(p.hp / p.maxHp, 0, 1), 18);
+  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(x, y, w * clamp(p.hp / p.maxHp, 0, 1), 5);
+  text(g, Math.ceil(p.hp) + ' / ' + p.maxHp, x + w / 2, y + 10, 12, '#ffffff', 'center');
+  // Dash
+  g.fillStyle = '#16222c'; g.fillRect(x, y + 21, w, 4);
+  g.fillStyle = p.dashCd > 0 ? '#2a7f8a' : '#2ce8f5'; g.fillRect(x, y + 21, w * (1 - p.dashCd / DASH_COOLDOWN), 4);
+  // Potions & gold
+  icon(g, 'potion', x + 10, y + 40, 20);
+  text(g, 'x' + p.potions, x + 24, y + 41, 13, p.potions ? '#ffffff' : '#777777');
+  icon(g, 'coin', x + 78, y + 40, 14);
+  text(g, String(p.gold), x + 90, y + 41, 13, '#fee761');
+  text(g, formatTime(game.time), x + w, y + 41, 12, '#8b90b4', 'right');
+  // Weapon
+  icon(g, WEAPONS[p.weapon.type].icon, x + 10, y + 62, 20);
+  text(g, weaponLabel(p.weapon), x + 24, y + 58, 12, RARITIES[p.weapon.rarity].color);
+  text(g, 'DMG ' + Math.round(weaponDamage(p.weapon) * p.dmgMul), x + 24, y + 71, 10, '#8b90b4');
+  // Relics
+  let rx = x + 8;
+  for (const key of RELIC_KEYS) {
+    const n = p.relics[key];
+    if (!n) continue;
+    g.fillStyle = 'rgba(8,6,14,0.72)'; g.fillRect(rx - 12, y + 92, 28, 24);
+    icon(g, key, rx, y + 104, 18);
+    if (n > 1) text(g, String(n), rx + 12, y + 110, 10, '#ffffff', 'center');
+    rx += 30;
+  }
+
+  drawMinimap(g);
+
+  // Boss health
+  const boss = enemies.find(e => e.type === 'boss' && e.awake);
+  if (boss) {
+    const bw = 400, bx = (VIEW_W - bw) / 2, by = VIEW_H - 34;
+    text(g, BOSS_NAME, VIEW_W / 2, by - 12, 13, '#ff8866', 'center');
+    g.fillStyle = 'rgba(8,6,14,0.8)'; g.fillRect(bx - 3, by - 3, bw + 6, 16);
+    g.fillStyle = '#3a1418'; g.fillRect(bx, by, bw, 10);
+    g.fillStyle = boss.phase2 ? '#f77622' : '#e43b44'; g.fillRect(bx, by, bw * boss.hp / boss.maxHp, 10);
+    g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(bx + bw / 2 - 1, by, 2, 10);
+  }
+
+  // Use prompt
+  const useKey = touch.mode ? 'USE' : '[E]';
+  const promptY = boss ? VIEW_H - 78 : VIEW_H - 50;
+  if (interact && game.state === 'playing') {
+    if (interact.type === 'stairs') text(g, useKey + ' Descend deeper', VIEW_W / 2, promptY, 15, '#fee761', 'center');
+    else {
+      const wpn = interact.item.weapon;
+      text(g, useKey + ' Take ' + weaponLabel(wpn), VIEW_W / 2, promptY - 9, 15, RARITIES[wpn.rarity].color, 'center');
+      text(g, 'DMG ' + Math.round(weaponDamage(wpn) * p.dmgMul) + '   (yours: ' + Math.round(weaponDamage(p.weapon) * p.dmgMul) + ')', VIEW_W / 2, promptY + 9, 12, '#c8ccd4', 'center');
+    }
+  }
+  // Toasts
+  toasts.forEach((t, i) => {
+    g.globalAlpha = clamp(t.life, 0, 1);
+    text(g, t.text, VIEW_W / 2, promptY - 34 - (toasts.length - 1 - i) * 20, 13, t.color, 'center');
+  });
+  g.globalAlpha = 1;
+  // Floor banner
+  if (game.banner) {
+    const b = game.banner;
+    g.globalAlpha = clamp(Math.min(b.life, 3 - b.life) * 2.5, 0, 1);
+    text(g, b.text, VIEW_W / 2, 150, 44, b.color, 'center', TITLE_FONT);
+    text(g, b.sub, VIEW_W / 2, 190, 17, '#c8ccd4', 'center', TITLE_FONT);
+    g.globalAlpha = 1;
+  }
+}
+
+function drawNumbers(g, cx, cy) {
+  for (const n of numbers) {
+    g.globalAlpha = clamp(n.life * 2.5, 0, 1);
+    text(g, n.text, n.x - cx, n.y - cy, 14, n.color, 'center');
+  }
+  g.globalAlpha = 1;
+}
+
+function controlLines() {
+  return touch.mode
+    ? ['Left stick: move', 'Right stick: aim + attack', 'DASH: dodge roll', 'POTION: heal', 'USE: stairs + weapons']
+    : ['WASD / Arrows: move', 'Mouse: aim   Click: attack', 'Space: dash through danger', 'Q: drink potion', 'E: stairs + swap weapons', 'P: pause   M: mute'];
+}
+
+const embers = [];
+function drawTitle(g) {
+  const gr = g.createRadialGradient(VIEW_W / 2, 420, 40, VIEW_W / 2, 300, 560);
+  gr.addColorStop(0, '#3a1a14'); gr.addColorStop(0.5, '#150c14'); gr.addColorStop(1, '#05040a');
+  g.fillStyle = gr; g.fillRect(0, 0, VIEW_W, VIEW_H);
+  if (embers.length < 70) embers.push({ x: Math.random() * VIEW_W, y: VIEW_H + 10, vy: 20 + Math.random() * 50, s: 2 + Math.random() * 3, seed: Math.random() * 10 });
+  for (const e of embers) {
+    e.y -= e.vy / 60; e.x += Math.sin(game.anim * 2 + e.seed) * 0.4;
+    if (e.y < -10) { e.y = VIEW_H + 10; e.x = Math.random() * VIEW_W; }
+    g.globalAlpha = clamp(e.y / VIEW_H, 0, 1) * 0.8;
+    g.fillStyle = e.seed > 5 ? '#f77622' : '#fee761';
+    g.fillRect(e.x, e.y, e.s, e.s);
+  }
+  g.globalAlpha = 1;
+  g.save();
+  g.shadowColor = '#f77622'; g.shadowBlur = 26 + Math.sin(game.anim * 3) * 8;
+  text(g, 'EMBERDEEP', VIEW_W / 2, 118, 78, '#fee761', 'center', TITLE_FONT);
+  g.restore();
+  text(g, 'A roguelike dungeon crawler', VIEW_W / 2, 172, 18, '#e8b796', 'center', TITLE_FONT);
+
+  // The cast
+  const baseY = 268, bob = k => Math.sin(game.anim * 3 + k) * 3;
+  g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(120, baseY + 26, 560, 6);
+  drawSprite(g, 'player', 190, baseY + bob(0), 1, false, 1.4, 1.4);
+  drawSprite(g, 'slime', 320, baseY + 6 + bob(1), -1, false, 1.3, 1.3);
+  drawSprite(g, Math.floor(game.anim * 8) % 2 ? 'batA' : 'batB', 420, baseY - 14 + bob(2) * 2, -1, false, 1.3, 1.3);
+  drawSprite(g, 'skeleton', 510, baseY + bob(3), -1, false, 1.3, 1.3);
+  drawSprite(g, 'boss', 620, baseY - 18 + bob(4), 1, false, 0.9, 0.9);
+  text(g, 'You', 190, baseY + 46, 12, '#2ce8f5', 'center');
+  text(g, 'Slime', 320, baseY + 46, 12, '#63c74d', 'center');
+  text(g, 'Bat', 420, baseY + 46, 12, '#b55088', 'center');
+  text(g, 'Skeleton', 510, baseY + 46, 12, '#ead4aa', 'center');
+  text(g, 'Ember King', 620, baseY + 46, 12, '#ff6644', 'center');
+
+  text(g, 'Fight through 3 random floors, grab loot, and slay the Ember King.', VIEW_W / 2, 352, 14, '#c8ccd4', 'center');
+  controlLines().forEach((line, i) => text(g, line, VIEW_W / 2, 388 + i * 20, 13, '#8b90b4', 'center'));
+  if (Math.floor(game.anim * 2) % 2)
+    text(g, touch.mode ? 'TAP TO DESCEND' : 'CLICK OR PRESS ENTER TO DESCEND', VIEW_W / 2, 536, 20, '#ffffff', 'center');
+  if (best.wins || best.bestGold)
+    text(g, 'Wins: ' + best.wins + (best.bestTime ? '   Fastest: ' + formatTime(best.bestTime) : '') + '   Most gold: ' + best.bestGold, VIEW_W / 2, 572, 12, '#b86f50', 'center');
+}
+
+function drawEndScreen(g, won) {
+  const a = clamp(game.endT / 0.8, 0, 1);
+  g.fillStyle = won ? `rgba(20,14,4,${a * 0.78})` : `rgba(24,2,6,${a * 0.8})`;
+  g.fillRect(0, 0, VIEW_W, VIEW_H);
+  g.globalAlpha = a;
+  g.save();
+  g.shadowColor = won ? '#fee761' : '#e43b44'; g.shadowBlur = 24;
+  text(g, won ? 'VICTORY!' : 'YOU DIED', VIEW_W / 2, 170, 68, won ? '#fee761' : '#e43b44', 'center', TITLE_FONT);
+  g.restore();
+  text(g, won ? 'The Ember King has fallen. The deep is quiet again.' : 'Slain on ' + (game.floor === FINAL_FLOOR ? 'the final floor' : 'floor ' + game.floor) + ' — ' + THEMES[game.floor - 1].name,
+    VIEW_W / 2, 232, 16, '#e8b796', 'center', TITLE_FONT);
+  const rows = [['Time', formatTime(game.time)], ['Monsters slain', String(player.kills)], ['Gold', String(player.gold)], ['Weapon', weaponLabel(player.weapon)]];
+  rows.forEach(([label, value], i) => {
+    text(g, label, VIEW_W / 2 - 16, 290 + i * 26, 15, '#8b90b4', 'right');
+    text(g, value, VIEW_W / 2 + 16, 290 + i * 26, 15, '#ffffff', 'left');
+  });
+  if (won && best.bestTime) text(g, 'Fastest win: ' + formatTime(best.bestTime), VIEW_W / 2, 408, 13, '#b86f50', 'center');
+  if (game.endT > 0.9 && Math.floor(game.anim * 2) % 2)
+    text(g, touch.mode ? 'TAP TO PLAY AGAIN' : 'CLICK OR PRESS ENTER TO PLAY AGAIN', VIEW_W / 2, 470, 18, '#ffffff', 'center');
+  g.globalAlpha = 1;
+}
+
+function render() {
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  if (game.state === 'title') { drawTitle(ctx); return; }
+
+  const [cx, cy] = drawWorld(wctx);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = !Number.isInteger(renderScale);
+  ctx.drawImage(world, 0, 0, canvas.width, canvas.height);
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+
+  drawNumbers(ctx, cx, cy);
+  drawHUD(ctx);
+  if (game.state === 'paused') {
+    ctx.fillStyle = 'rgba(5,4,10,0.72)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    text(ctx, 'PAUSED', VIEW_W / 2, 190, 54, '#ffffff', 'center', TITLE_FONT);
+    controlLines().forEach((line, i) => text(ctx, line, VIEW_W / 2, 260 + i * 22, 14, '#c8ccd4', 'center'));
+    text(ctx, touch.mode ? 'Tap to resume' : 'Press P or click to resume', VIEW_W / 2, 420, 15, '#fee761', 'center');
+  } else if (game.state === 'dead') drawEndScreen(ctx, false);
+  else if (game.state === 'win') drawEndScreen(ctx, true);
+  else if (game.state === 'transition') {
+    const tr = game.transition, k = clamp(tr.t / 0.5, 0, 1);
+    ctx.fillStyle = `rgba(5,4,10,${tr.phase === 'out' ? k : 1 - k})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+function setMouse(ev) {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = (ev.clientX - rect.left) * VIEW_W / rect.width;
+  mouse.y = (ev.clientY - rect.top) * VIEW_H / rect.height;
+}
+canvas.addEventListener('pointerdown', ev => {
+  initAudio();
+  if (ev.pointerType === 'mouse') {
+    if (ev.button !== 0) return;
+    mouse.active = true; mouse.down = true; touch.mode = false;
+    setMouse(ev);
+  } else touch.mode = true;
+  primaryAction();
+});
+canvas.addEventListener('pointermove', ev => { if (ev.pointerType === 'mouse') { mouse.active = true; setMouse(ev); } });
+window.addEventListener('pointerup', ev => { if (ev.pointerType === 'mouse') mouse.down = false; });
+canvas.addEventListener('contextmenu', ev => ev.preventDefault());
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; });
+
+window.addEventListener('keydown', ev => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(ev.code)) ev.preventDefault();
+  keys[ev.code] = true;
+  if (ev.repeat) return;
+  initAudio();
+  switch (ev.code) {
+    case 'Enter': primaryAction(); break;
+    case 'KeyR': if (game.state === 'dead' || game.state === 'win') primaryAction(); break;
+    case 'Space': if (game.state === 'playing') player.tryDash(); else if (game.state === 'title') primaryAction(); break;
+    case 'KeyE': useInteract(); break;
+    case 'KeyQ': drinkPotion(); break;
+    case 'KeyP': case 'Escape': togglePause(); break;
+    case 'KeyM':
+      audio.muted = !audio.muted;
+      if (game.state === 'playing') toast(audio.muted ? 'Sound off' : 'Sound on', '#aaaaaa');
+      break;
+  }
+});
+window.addEventListener('keyup', ev => { keys[ev.code] = false; });
+
+function setupJoystick(el, onMove) {
+  const dot = el.firstElementChild, R = 46;
+  let id = null;
+  const handle = ev => {
+    const rect = el.getBoundingClientRect();
+    let dx = ev.clientX - (rect.left + rect.width / 2), dy = ev.clientY - (rect.top + rect.height / 2);
+    const l = Math.hypot(dx, dy), m = Math.min(l, R);
+    if (l > 0) { dx = dx / l * m; dy = dy / l * m; }
+    dot.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    onMove(dx / R, dy / R, true);
+  };
+  const end = ev => {
+    if (ev.pointerId !== id) return;
+    id = null;
+    dot.style.transform = 'translate(-50%, -50%)';
+    onMove(0, 0, false);
+  };
+  el.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    initAudio(); touch.mode = true;
+    id = ev.pointerId;
+    try { el.setPointerCapture(id); } catch (err) { /* synthetic pointer */ }
+    handle(ev);
+  });
+  el.addEventListener('pointermove', ev => { if (ev.pointerId === id) handle(ev); });
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+}
+setupJoystick(document.getElementById('joyL'), (x, y) => { touch.moveX = x; touch.moveY = y; });
+setupJoystick(document.getElementById('joyR'), (x, y, on) => {
+  touch.aimActive = on && Math.hypot(x, y) > 0.25;
+  if (touch.aimActive) { touch.aimX = x; touch.aimY = y; }
+});
+function bindButton(id, fn) {
+  document.getElementById(id).addEventListener('pointerdown', ev => { ev.preventDefault(); initAudio(); touch.mode = true; fn(); });
+}
+bindButton('btnDash', () => { if (game.state === 'playing') player.tryDash(); });
+bindButton('btnPotion', drinkPotion);
+bindButton('btnUse', useInteract);
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+function resize() {
+  const s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.width = Math.floor(VIEW_W * s) + 'px';
+  canvas.style.height = Math.floor(VIEW_H * s) + 'px';
+  canvas.width = Math.round(VIEW_W * s * dpr);
+  canvas.height = Math.round(VIEW_H * s * dpr);
+  renderScale = canvas.width / VIEW_W;
+}
+window.addEventListener('resize', resize);
+resize();
+touch.mode = window.matchMedia('(pointer: coarse)').matches;
+
+let lastTs = 0;
+function frame(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 1 / 30) || 0;
+  lastTs = ts;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
