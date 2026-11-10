@@ -115,13 +115,13 @@ const LIGHT_RADIUS = 340;             // px
 const PICKUP_RADIUS = 20, MAGNET_RADIUS = 85, WEAPON_REACH = 34;
 const CORNER_ASSIST = 7;               // px of wall corner you can slip around
 
-const FLOOR_HP_SCALE = 0.4, FLOOR_DMG_SCALE = 0.25, FLOOR_SPEED_SCALE = 0.05;
+const FLOOR_HP_SCALE = 0.5, FLOOR_DMG_SCALE = 0.3, FLOOR_SPEED_SCALE = 0.05;
 const ENEMY_STATS = {
-  slime:    { hp: 34,  speed: 70,  r: 12, dmg: 12, gold: [1, 3] },
-  mini:     { hp: 12,  speed: 95,  r: 8,  dmg: 6,  gold: [0, 1] },   // spawned when a slime splits
-  bat:      { hp: 16,  speed: 150, r: 9,  dmg: 8,  gold: [1, 2] },
-  skeleton: { hp: 28,  speed: 80,  r: 11, dmg: 11, gold: [2, 4] },
-  boss:     { hp: 850, speed: 72,  r: 32, dmg: 18, gold: [40, 40] },
+  slime:    { hp: 36,   speed: 78,  r: 12, dmg: 12, gold: [1, 3] },
+  mini:     { hp: 12,   speed: 105, r: 8,  dmg: 6,  gold: [0, 1] },   // spawned when a slime splits
+  bat:      { hp: 16,   speed: 160, r: 9,  dmg: 10, gold: [1, 2] },
+  skeleton: { hp: 30,   speed: 85,  r: 11, dmg: 14, gold: [2, 4] },
+  boss:     { hp: 1200, speed: 72,  r: 32, dmg: 20, gold: [40, 40] },
 };
 const SPAWN_WEIGHTS = [               // per floor
   { slime: 55, bat: 30, skeleton: 15 },
@@ -131,18 +131,20 @@ const SPAWN_WEIGHTS = [               // per floor
 const SLIME_HOP_TIME = 0.32, SLIME_HOP_BOOST = 2.6;
 const BAT_FLEE_TIME = 0.7;
 const SKELETON_NEAR = 140, SKELETON_FAR = 270, SKELETON_SIGHT = 400;
-const SKELETON_AIM_TIME = 0.5, SKELETON_ARROW_SPEED = 270;
+const SKELETON_AIM_TIME = 0.45, SKELETON_ARROW_SPEED = 300;
+const POTION_DROP_CHANCE = 0.045, CHEST_POTION_CHANCE = 0.4;
 
 const BOSS_NAME = 'THE EMBER KING';
 const BOSS_COLLIDE_R = 24;
 const BOSS_CHARGE_SPEED = 540;
-const BOSS_BULLET_DMG = 12, BOSS_CHARGE_DMG = 24;
+const BOSS_BULLET_DMG = 14, BOSS_CHARGE_DMG = 28;
+const BOSS_SLAM_RADIUS = 125, BOSS_SLAM_DMG = 22, BOSS_SLAM_TELL = 0.6;
 const BOSS_RING_COUNT = 14, BOSS_RING_SPEED = 170;
 const BOSS_FAN_COUNT = 5, BOSS_FAN_SPREAD = 0.22, BOSS_FAN_SPEED = 230;
 const BOSS_SPIRAL_SPEED = 185;
 
 const WEAPONS = {
-  sword: { name: 'Sword',      icon: 'sword', kind: 'melee', dmg: 16, cd: 0.34, range: 56, arc: 2.0, knock: 240 },
+  sword: { name: 'Sword',      icon: 'sword', kind: 'melee', dmg: 16, cd: 0.36, range: 56, arc: 1.9, knock: 190 },
   bow:   { name: 'Bow',        icon: 'bow',   kind: 'arrow', dmg: 11, cd: 0.36, speed: 560, pierce: 1, knock: 120 },
   staff: { name: 'Fire Staff', icon: 'staff', kind: 'orb',   dmg: 12, cd: 0.52, speed: 380, aoe: 50, knock: 160 },
 };
@@ -152,7 +154,7 @@ const RARITIES = [
   { name: 'Rare',   mult: 1.35, color: '#4da6ff' },
   { name: 'Epic',   mult: 1.75, color: '#c77dff' },
 ];
-const RARITY_ODDS = [[0.60, 0.32, 0.08], [0.35, 0.45, 0.20], [0.15, 0.45, 0.40]];   // per floor
+const RARITY_ODDS = [[0.70, 0.26, 0.04], [0.45, 0.43, 0.12], [0.25, 0.50, 0.25]];   // per floor
 
 const RELICS = {
   boots:  { name: 'Swift Boots',  desc: '+12% speed' },
@@ -584,7 +586,7 @@ function populateFloor(floor) {
     if (room.kind === 'normal' && (order < 2 || chance(0.35))) {
       const spot = freeSpot(room, placed);
       placed.push(spot);
-      chests.push({ x: spot.x, y: spot.y, opened: false, loot: order === 0 ? 'weapon' : order === 1 ? 'relic' : 'any', potion: chance(0.45) });
+      chests.push({ x: spot.x, y: spot.y, opened: false, loot: order === 0 ? 'weapon' : order === 1 ? 'relic' : 'any', potion: chance(CHEST_POTION_CHANCE) });
       chestCount++;
     }
     const area = (room.w - 2) * (room.h - 2);
@@ -831,15 +833,8 @@ class Player {
     this.swingT = Math.max(0, this.swingT - dt);
     this.hpLag += (this.hp - this.hpLag) * Math.min(1, dt * 4);
 
-    let mx = touch.moveX, my = touch.moveY;
-    if (keys.KeyA || keys.ArrowLeft) mx -= 1;
-    if (keys.KeyD || keys.ArrowRight) mx += 1;
-    if (keys.KeyW || keys.ArrowUp) my -= 1;
-    if (keys.KeyS || keys.ArrowDown) my += 1;
-    const ml = Math.hypot(mx, my);
-    if (ml > 1) { mx /= ml; my /= ml; }
-    this.moving = ml > 0.15;
-    this.moveX = mx; this.moveY = my;
+    this.readMove();
+    const mx = this.moveX, my = this.moveY;
 
     if (touch.aimActive) this.aim = Math.atan2(touch.aimY, touch.aimX);
     else if (mouse.active) this.aim = Math.atan2(mouse.y + cam.y - this.y, mouse.x + cam.x - this.x);
@@ -863,8 +858,22 @@ class Player {
     if ((mouse.down || touch.aimActive) && this.attackCd <= 0) this.attack();
   }
 
+  // Movement input from keyboard + touch stick, as a vector no longer than 1.
+  readMove() {
+    let mx = touch.moveX, my = touch.moveY;
+    if (keys.KeyA || keys.ArrowLeft) mx -= 1;
+    if (keys.KeyD || keys.ArrowRight) mx += 1;
+    if (keys.KeyW || keys.ArrowUp) my -= 1;
+    if (keys.KeyS || keys.ArrowDown) my += 1;
+    const ml = Math.hypot(mx, my);
+    if (ml > 1) { mx /= ml; my /= ml; }
+    this.moving = ml > 0.15;
+    this.moveX = mx; this.moveY = my;
+  }
+
   tryDash() {
     if (this.dashCd > 0 || this.dashT > 0) return;
+    this.readMove();
     let dx = this.moveX, dy = this.moveY;
     const l = Math.hypot(dx, dy);
     if (l < 0.15) { dx = Math.cos(this.aim); dy = Math.sin(this.aim); } else { dx /= l; dy /= l; }
@@ -891,8 +900,8 @@ class Player {
         if (!rayClear(this.x, this.y, e.x, e.y)) continue;
         damageEnemy(e, dmg, Math.atan2(e.y - this.y, e.x - this.x), w.knock);
       }
-      for (const b of bullets) {                        // a good swing bats enemy shots out of the air
-        if (b.dead || !b.isEnemy || dist(this.x, this.y, b.x, b.y) > w.range + 8) continue;
+      for (const b of bullets) {                        // a good swing bats arrows out of the air (not magic!)
+        if (b.dead || !b.isEnemy || b.kind !== 'arrow' || dist(this.x, this.y, b.x, b.y) > w.range + 8) continue;
         if (Math.abs(angleDiff(Math.atan2(b.y - this.y, b.x - this.x), this.aim)) > w.arc / 2 + 0.2) continue;
         b.dead = true;
         burst(b.x, b.y, ['#ffffff', '#fee761'], 5, 90, 0.25, 2);
@@ -982,7 +991,7 @@ function killEnemy(e) {
   sfx.kill();
   const g = ENEMY_STATS[e.type].gold;
   for (let i = randInt(g[0], g[1]); i > 0; i--) dropItem('gold', e.x, e.y, { value: 1 });
-  if (e.type !== 'mini' && chance(0.06)) dropItem('potion', e.x, e.y);
+  if (e.type !== 'mini' && chance(POTION_DROP_CHANCE)) dropItem('potion', e.x, e.y);
   if (e.type === 'slime') {                           // big slimes split in two
     for (const side of [-1, 1]) {
       const m = createEnemy('mini', e.x, e.y, game.floor, e.room);
@@ -1061,11 +1070,14 @@ function bossPickAttack(e) {
   }
   let choice = pick(pool);
   if (choice === e.lastAttack) choice = pick(pool);
+  // Punish anyone hugging the boss with a ground slam.
+  if (e.lastAttack !== 'slam' && dist(e.x, e.y, player.x, player.y) < BOSS_SLAM_RADIUS - 10 && chance(0.65)) choice = 'slam';
   e.lastAttack = choice;
   e.volley = 0;
   if (choice === 'ring') setBoss(e, 'ringTell', 0.6);
   else if (choice === 'fan') setBoss(e, 'fan', 0.45);
   else if (choice === 'charge') setBoss(e, 'chargeTell', 0.8);
+  else if (choice === 'slam') setBoss(e, 'slamTell', BOSS_SLAM_TELL);
   else if (choice === 'spiral') { setBoss(e, 'spiral', 2.2); e.shotT = 0.3; }
   else setBoss(e, 'summon', 0.7);
   sfx.tell();
@@ -1123,6 +1135,15 @@ function updateBoss(e, dt) {
       } else if (e.timer <= 0) setBoss(e, 'rest', 0.5);
       break;
     }
+    case 'slamTell':
+      if (e.timer <= 0) {
+        shake(12); sfx.slam();
+        slashes.push({ x: e.x, y: e.y, ang: 0, arc: TAU, range: BOSS_SLAM_RADIUS, life: 0.22, color: '#e43b44', ring: true });
+        burst(e.x, e.y + 20, ['#e43b44', '#f77622', '#5b6470'], 26, 260, 0.5, 4);
+        if (d < BOSS_SLAM_RADIUS + player.r - 4) player.hurt(BOSS_SLAM_DMG, e.x, e.y);
+        setBoss(e, 'rest', 0.7);
+      }
+      break;
     case 'spiral':
       e.spin += dt * 2.4;
       e.shotT -= dt;
@@ -1451,7 +1472,12 @@ function update(dt) {
     else if (tr.phase === 'in' && tr.t >= 0.5) { game.transition = null; game.state = 'playing'; }
     return;
   }
-  if (game.state === 'dead' || game.state === 'win') { game.endT += dt; updateEffects(dt); return; }
+  if (game.state === 'dead' || game.state === 'win') {
+    game.endT += dt;
+    player.hpLag += (player.hp - player.hpLag) * Math.min(1, dt * 4);
+    updateEffects(dt);
+    return;
+  }
 
   game.time += dt;
   player.update(dt);
@@ -1622,7 +1648,7 @@ function drawEnemy(g, e) {
     case 'boss': {
       drawShadow(g, e.x, e.y + 34, 34);
       let ox = 0, oy = 0;
-      if (e.state === 'ringTell' || e.state === 'chargeTell' || e.state === 'roar' || e.state === 'dying') {
+      if (e.state === 'ringTell' || e.state === 'chargeTell' || e.state === 'slamTell' || e.state === 'roar' || e.state === 'dying') {
         ox = (Math.random() - 0.5) * 5; oy = (Math.random() - 0.5) * 5;
       }
       if (e.phase2 && e.state !== 'dying') {
@@ -1660,6 +1686,14 @@ function drawBossTelegraph(g, e) {
     g.translate(e.x, e.y); g.rotate(e.dir);
     g.fillStyle = `rgba(228,59,68,${a})`; g.fillRect(0, -26, 460, 52);
     g.restore();
+  } else if (e.state === 'slamTell') {
+    const k = 1 - clamp(e.timer / BOSS_SLAM_TELL, 0, 1);
+    g.fillStyle = 'rgba(228,59,68,0.16)';
+    g.beginPath(); g.arc(e.x, e.y, BOSS_SLAM_RADIUS, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(228,59,68,0.3)';
+    g.beginPath(); g.arc(e.x, e.y, BOSS_SLAM_RADIUS * k, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255,120,100,0.8)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(e.x, e.y, BOSS_SLAM_RADIUS, 0, TAU); g.stroke();
   } else if (e.state === 'ringTell' && e.volley === 0) {
     g.strokeStyle = `rgba(247,118,34,${0.5})`; g.lineWidth = 3;
     g.beginPath(); g.arc(e.x, e.y, 40 + (0.6 - e.timer) * 70, 0, TAU); g.stroke();
@@ -1716,7 +1750,7 @@ function drawLighting(g, cx, cy) {
   g.globalCompositeOperation = 'lighter';                         // warm torch glow
   for (const [x, y, r] of lit) {
     const gr = g.createRadialGradient(x, y, 4, x, y, r);
-    gr.addColorStop(0, 'rgba(255,150,50,0.2)'); gr.addColorStop(1, 'rgba(255,120,30,0)');
+    gr.addColorStop(0, 'rgba(255,150,50,0.15)'); gr.addColorStop(1, 'rgba(255,120,30,0)');
     g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
   }
   g.globalCompositeOperation = 'source-over';
