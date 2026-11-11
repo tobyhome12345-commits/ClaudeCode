@@ -133,6 +133,8 @@ const BAT_FLEE_TIME = 0.7;
 const SKELETON_NEAR = 140, SKELETON_FAR = 270, SKELETON_SIGHT = 400;
 const SKELETON_AIM_TIME = 0.45, SKELETON_ARROW_SPEED = 300;
 const POTION_DROP_CHANCE = 0.045, CHEST_POTION_CHANCE = 0.4;
+const SHOP_PRICES = { potion: 30, relic: 75, weapon: [0, 90, 150] };   // weapon price by rarity
+const SHOP_EPIC_ODDS = [0, 0.35, 0.6];                                // per floor; otherwise the shop weapon is Rare
 
 const BOSS_NAME = 'THE EMBER KING';
 const BOSS_COLLIDE_R = 24;
@@ -203,6 +205,9 @@ const SPRITE_DATA = {
     '..krrrrrrrrrrk..', '.krrkkrrrrkkrrk.', '.krkyykrrkyykrk.', '.krkyokrrkoykrk.', '.krrkkrrrrkkrrk.',
     '.krrrrrkkrrrrrk.', '..krrrrrrrrrrk..', '..kRkwkwwkwkRk..', '..kRRkwkkwkRRk..', '...kRRRRRRRRk...',
     '....kkkkkkkk....' ] },
+  merchant: { rows: [
+    '....kkkk....', '...kppppk...', '..kppPPppk..', '..kpkkkkpk..', '..kpykkypk..', '..kpkkkkpk..',
+    '.kkppppppkk.', 'kpkpptyppkpk', 'kpkppppppkpk', '.kkPPPPPPkk.', '..kPPPPPPk..', '..kkkkkkkk..' ] },
   chest: { rows: [
     '.kkkkkkkkkk.', 'kttttttttttk', 'ktttttttttTk', 'kyyyykkyyyyk', 'kTTTkyykTTTk', 'kttttkkttttk',
     'kttttttttTTk', 'kTTTTTTTTTTk', '.kkkkkkkkkk.' ] },
@@ -509,10 +514,13 @@ function tryGenerate(floor) {
   if (isBossFloor) { start = far; bossRoom = anchor; anchor.kind = 'boss'; }
   else { start = anchor; exitRoom = far; far.kind = 'exit'; }
   start.kind = 'start';
+  // One quiet room per floor belongs to the merchant (on the final floor the merchant waits at the start).
+  let shopRoom = start;
+  if (!isBossFloor) { shopRoom = pick(rooms.filter(r => r.kind === 'normal')); shopRoom.kind = 'shop'; }
 
   // Pillars: single tiles with open floor on all 8 sides, so they can never block a path.
   for (const r of rooms) {
-    if (r === start) continue;
+    if (r === start || r === shopRoom) continue;
     const inset = r.kind === 'boss' ? 3 : 2;
     if (r.kind !== 'boss' && !(r.w >= 9 && r.h >= 7 && chance(0.6))) continue;
     for (const [px, py] of [[r.x + inset, r.y + inset], [r.x + r.w - 1 - inset, r.y + inset],
@@ -531,7 +539,7 @@ function tryGenerate(floor) {
       torches.push({ tx, ty: r.y - 1, x: tx * TILE + TILE / 2, y: (r.y - 1) * TILE + 14, seed: Math.random() * 10 });
     }
   }
-  return { tiles, explored: new Uint8Array(MAP_W * MAP_H), rooms, start, exitRoom, bossRoom, torches, gates: [] };
+  return { tiles, explored: new Uint8Array(MAP_W * MAP_H), rooms, start, exitRoom, bossRoom, shopRoom, merchant: null, torches, gates: [] };
 }
 
 function generateFloor(floor) {
@@ -560,6 +568,22 @@ function freeSpot(room, avoid) {
   return { x: room.cx * TILE + TILE / 2 + TILE, y: room.cy * TILE + TILE / 2 };
 }
 
+// The merchant stands at the back of the room with three priced goods laid out in front.
+function stockShop(room, floor) {
+  const cx = room.cx * TILE + TILE / 2, cy = room.cy * TILE + TILE / 2;
+  dungeon.merchant = { x: cx, y: cy - TILE * 2 };
+  const rarity = chance(SHOP_EPIC_ODDS[floor - 1]) ? 2 : 1;
+  let type = pick(WEAPON_KEYS);
+  if (type === player.weapon.type && rarity <= player.weapon.rarity) type = pick(WEAPON_KEYS.filter(k => k !== type));
+  const goods = [
+    { kind: 'potion', price: SHOP_PRICES.potion },
+    { kind: 'relic', relic: pick(RELIC_KEYS), price: SHOP_PRICES.relic },
+    { kind: 'weapon', weapon: { type, rarity }, price: SHOP_PRICES.weapon[rarity] },
+  ];
+  goods.forEach((g, i) => items.push(Object.assign(
+    { x: cx + (i - 1) * TILE * 2, y: cy + TILE * 2, r: 5, vx: 0, vy: 0, age: 1, dead: false, seed: i * 2 }, g)));
+}
+
 function populateFloor(floor) {
   enemies = []; bullets = []; items = []; chests = []; particles = []; numbers = []; slashes = []; spawnQueue = [];
   const combatRooms = shuffle(dungeon.rooms.filter(r => r.kind === 'normal'));
@@ -569,6 +593,8 @@ function populateFloor(floor) {
   for (const room of dungeon.rooms) {
     const placed = [];
     const cxp = room.cx * TILE + TILE / 2, cyp = room.cy * TILE + TILE / 2;
+    if (room === dungeon.shopRoom) stockShop(room, floor);
+    if (room.kind === 'shop') continue;
     if (room.kind === 'start') {
       if (isBossFloor) chests.push({ x: cxp + TILE * 2, y: cyp, opened: false, loot: 'any', potion: true });
       continue;
@@ -760,6 +786,7 @@ function updateFOV(force) {
   if (room) {
     if (!room.seen) {
       room.seen = true;
+      if (room === dungeon.shopRoom) toast('A merchant! Spend your gold here.', '#63c74d');
       for (let y = room.y - 1; y <= room.y + room.h; y++)
         for (let x = room.x - 1; x <= room.x + room.w; x++) revealTile(x, y);
     }
@@ -1344,7 +1371,7 @@ function collectItem(it) {
 
 function updateItems(dt) {
   interact = null;
-  let nearestWeapon = null, nearestD = WEAPON_REACH;
+  let nearestUse = null, nearestD = WEAPON_REACH;
   for (const it of items) {
     if (it.dead) continue;
     it.age += dt;
@@ -1359,19 +1386,32 @@ function updateItems(dt) {
       const pull = Math.min(d, 420 * dt);
       moveEntity(it, (player.x - it.x) / d * pull, (player.y - it.y) / d * pull);
     }
-    if (it.kind === 'weapon') { if (it.age > 0.3 && d < nearestD) { nearestD = d; nearestWeapon = it; } continue; }
+    if (it.kind === 'weapon' || it.price) {            // needs the Use key: weapon swaps and shop goods
+      if (it.age > 0.3 && d < nearestD) { nearestD = d; nearestUse = it; }
+      continue;
+    }
     if (it.age > 0.35 && d < PICKUP_RADIUS && collectItem(it)) it.dead = true;
   }
   for (const c of chests)
     if (!c.opened && dist(c.x, c.y, player.x, player.y) < 26) openChest(c);
 
-  if (nearestWeapon) interact = { type: 'weapon', item: nearestWeapon };
+  if (nearestUse) interact = { type: nearestUse.price ? 'buy' : 'weapon', item: nearestUse };
   else if (tileAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) === T_STAIRS) interact = { type: 'stairs' };
 }
 
 function useInteract() {
   if (game.state !== 'playing' || !interact) return;
-  if (interact.type === 'weapon') {
+  if (interact.type === 'buy') {
+    const it = interact.item;
+    if (player.gold < it.price) { toast('Not enough gold!', '#ff8888'); sfx.clink(); return; }
+    if (it.kind === 'potion' && player.potions >= POTION_MAX) { toast('Your potion bag is full', '#aaaaaa'); return; }
+    player.gold -= it.price;
+    it.price = 0;
+    sfx.coin();
+    burst(it.x, it.y, ['#fee761', '#f77622'], 10, 100, 0.4, 3);
+    if (it.kind !== 'weapon') { if (collectItem(it)) it.dead = true; return; }
+  }
+  if (interact.type === 'weapon' || interact.type === 'buy') {
     const it = interact.item, old = player.weapon;
     player.weapon = it.weapon;
     it.weapon = old; it.age = 0;                      // your old weapon stays on the floor
@@ -1556,6 +1596,11 @@ function drawShadow(g, x, y, w) {
 
 function drawItem(g, it) {
   const bob = Math.sin(game.anim * 4 + it.seed) * 2;
+  if (it.price) {                                     // shop goods sit on a little stone stand
+    g.fillStyle = '#1a1423'; g.fillRect(it.x - 15, it.y + 5, 30, 11);
+    g.fillStyle = '#5b6470'; g.fillRect(it.x - 13, it.y + 7, 26, 7);
+    g.fillStyle = '#9aa5b1'; g.fillRect(it.x - 13, it.y + 7, 26, 2);
+  }
   drawShadow(g, it.x, it.y + 8, it.kind === 'gold' ? 5 : 9);
   if (it.kind === 'gold') { drawSprite(g, 'coin', it.x, it.y + bob * 0.5); return; }
   if (it.kind === 'weapon') {
@@ -1771,12 +1816,18 @@ function drawWorld(g) {
   for (const c of chests) if (dungeon.explored[idx(Math.floor(c.x / TILE), Math.floor(c.y / TILE))]) list.push({ y: c.y, kind: 0, o: c });
   for (const it of items) if (dungeon.explored[idx(Math.floor(it.x / TILE), Math.floor(it.y / TILE))]) list.push({ y: it.y - 4, kind: 1, o: it });
   for (const e of enemies) if (dungeon.explored[idx(clamp(Math.floor(e.x / TILE), 0, MAP_W - 1), clamp(Math.floor(e.y / TILE), 0, MAP_H - 1))]) list.push({ y: e.y, kind: 2, o: e });
+  const mer = dungeon.merchant;
+  if (mer && dungeon.explored[idx(Math.floor(mer.x / TILE), Math.floor(mer.y / TILE))]) list.push({ y: mer.y, kind: 4, o: mer });
   list.push({ y: player.y, kind: 3, o: player });
   list.sort((a, b) => a.y - b.y);
   for (const d of list) {
     if (d.kind === 0) { drawShadow(g, d.o.x, d.o.y + 11, 15); drawSprite(g, d.o.opened ? 'chestOpen' : 'chest', d.o.x, d.o.y); }
     else if (d.kind === 1) drawItem(g, d.o);
     else if (d.kind === 2) drawEnemy(g, d.o);
+    else if (d.kind === 4) {
+      drawShadow(g, d.o.x, d.o.y + 13, 12);
+      drawSprite(g, 'merchant', d.o.x, d.o.y - 5 + Math.sin(game.anim * 2) * 1.5, player.x >= d.o.x ? 1 : -1);
+    }
     else drawPlayer(g);
   }
   for (const b of bullets) drawBullet(g, b);
@@ -1840,6 +1891,8 @@ function drawMinimap(g) {
   const dot = (wx, wy, col, size) => { g.fillStyle = col; g.fillRect(x + wx / TILE * 2 * s - size / 2, y + wy / TILE * 2 * s - size / 2, size, size); };
   for (const c of chests) if (!c.opened && dungeon.explored[idx(Math.floor(c.x / TILE), Math.floor(c.y / TILE))]) dot(c.x, c.y, '#f77622', 4);
   for (const e of enemies) if (e.type === 'boss' && e.awake) dot(e.x, e.y, '#e43b44', 6);
+  const mer = dungeon.merchant;
+  if (mer && dungeon.explored[idx(Math.floor(mer.x / TILE), Math.floor(mer.y / TILE))]) dot(mer.x, mer.y, '#63c74d', 5);
   if (Math.floor(game.anim * 4) % 2) dot(player.x, player.y, '#ffffff', 5); else dot(player.x, player.y, '#2ce8f5', 5);
   text(g, (game.floor === FINAL_FLOOR ? 'Final Floor' : 'Floor ' + game.floor + '/' + FINAL_FLOOR), x + w, y + h + 16, 12, '#c8ccd4', 'right');
   text(g, THEMES[game.floor - 1].name, x + w, y + h + 31, 11, '#8b90b4', 'right');
@@ -1896,11 +1949,17 @@ function drawHUD(g) {
   const useKey = touch.mode ? 'USE' : '[E]';
   const promptY = boss ? VIEW_H - 78 : VIEW_H - 50;
   if (interact && game.state === 'playing') {
+    const it = interact.item;
     if (interact.type === 'stairs') text(g, useKey + ' Descend deeper', VIEW_W / 2, promptY, 15, '#fee761', 'center');
-    else {
-      const wpn = interact.item.weapon;
-      text(g, useKey + ' Take ' + weaponLabel(wpn), VIEW_W / 2, promptY - 9, 15, RARITIES[wpn.rarity].color, 'center');
+    else if (it.kind === 'weapon') {
+      const wpn = it.weapon, verb = it.price ? ' Buy ' : ' Take ', cost = it.price ? '  —  ' + it.price + ' gold' : '';
+      text(g, useKey + verb + weaponLabel(wpn) + cost, VIEW_W / 2, promptY - 9, 15, it.price > p.gold ? '#ff8888' : RARITIES[wpn.rarity].color, 'center');
       text(g, 'DMG ' + Math.round(weaponDamage(wpn) * p.dmgMul) + '   (yours: ' + Math.round(weaponDamage(p.weapon) * p.dmgMul) + ')', VIEW_W / 2, promptY + 9, 12, '#c8ccd4', 'center');
+    } else {
+      const name = it.kind === 'potion' ? 'Health Potion' : RELICS[it.relic].name;
+      const desc = it.kind === 'potion' ? 'Heals ' + POTION_HEAL + ' HP when you drink it' : RELICS[it.relic].desc;
+      text(g, useKey + ' Buy ' + name + '  —  ' + it.price + ' gold', VIEW_W / 2, promptY - 9, 15, it.price > p.gold ? '#ff8888' : '#fee761', 'center');
+      text(g, desc, VIEW_W / 2, promptY + 9, 12, '#c8ccd4', 'center');
     }
   }
   // Toasts
@@ -1917,6 +1976,18 @@ function drawHUD(g) {
     text(g, b.sub, VIEW_W / 2, 190, 17, '#c8ccd4', 'center', TITLE_FONT);
     g.globalAlpha = 1;
   }
+}
+
+// Price tags and the merchant's patter, drawn crisp on top of the world.
+function drawShopLabels(g, cx, cy) {
+  const mer = dungeon.merchant;
+  if (!mer) return;
+  for (const it of items) {
+    if (!it.price || dist(it.x, it.y, player.x, player.y) > 260) continue;
+    text(g, it.price + 'g', it.x - cx, it.y - cy + 26, 12, it.price > player.gold ? '#ff8888' : '#fee761', 'center');
+  }
+  if (dist(mer.x, mer.y, player.x, player.y) < 150 && items.some(it => it.price))
+    text(g, 'Gold for goods, traveller!', mer.x - cx, mer.y - cy - 32, 12, '#c8f0b0', 'center');
 }
 
 function drawNumbers(g, cx, cy) {
@@ -2009,6 +2080,7 @@ function render() {
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
+  drawShopLabels(ctx, cx, cy);
   drawNumbers(ctx, cx, cy);
   drawHUD(ctx);
   if (game.state === 'paused') {
