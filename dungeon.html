@@ -974,10 +974,13 @@ function collides(x, y, r) {
 }
 
 // Moves along one axis. If a wall corner is only just in the way, slides sideways around it instead.
-function moveAxis(e, dx, dy, r) {
+// `other` is the movement wanted on the other axis: the slide never pushes against it, or the two
+// would cancel out and leave you stuck.
+function moveAxis(e, dx, dy, r, other) {
   if (!collides(e.x + dx, e.y + dy, r)) { e.x += dx; e.y += dy; return false; }
   const step = Math.min(Math.abs(dx) + Math.abs(dy), CORNER_ASSIST);
   for (const side of [1, -1]) {
+    if (other && Math.sign(other) !== side) continue;
     const ox = dx ? 0 : side, oy = dx ? side : 0;
     if (collides(e.x + dx + ox * CORNER_ASSIST, e.y + dy + oy * CORNER_ASSIST, r)) continue;
     if (collides(e.x + ox * step, e.y + oy * step, r)) continue;
@@ -992,8 +995,8 @@ function moveEntity(e, dx, dy) {
   const r = e.cr || e.r;
   if (collides(e.x, e.y, r)) { e.x += dx; e.y += dy; return false; }   // escape hatch: never trap something inside a wall
   let hit = false;
-  if (dx && moveAxis(e, dx, 0, r)) hit = true;
-  if (dy && moveAxis(e, 0, dy, r)) hit = true;
+  if (dx && moveAxis(e, dx, 0, r, dy)) hit = true;
+  if (dy && moveAxis(e, 0, dy, r, dx)) hit = true;
   return hit;
 }
 
