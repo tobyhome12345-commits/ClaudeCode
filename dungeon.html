@@ -180,12 +180,15 @@ const RELICS = {
 const RELIC_KEYS = Object.keys(RELICS);
 
 const THEMES = [
-  { name: 'The Forgotten Crypt', floor: '#2a2d3e', floorAlt: '#2f3346', line: '#212338', speck: '#3a3f58',
-    wallTop: '#12131c', face: '#4b5072', faceDark: '#3a3e5c', mortar: '#262840', light: '#6b71a0' },
-  { name: 'The Mossy Halls',     floor: '#26342c', floorAlt: '#2b3a31', line: '#1c2821', speck: '#3c5444',
-    wallTop: '#0f1512', face: '#4a6350', faceDark: '#3a4d3f', mortar: '#222e26', light: '#6f9276' },
-  { name: 'The Ember Throne',    floor: '#3a2626', floorAlt: '#412b2a', line: '#2b1b1c', speck: '#5a3531',
-    wallTop: '#170d0f', face: '#6e3d38', faceDark: '#582f2c', mortar: '#2e1819', light: '#a05e50' },
+  { name: 'The Forgotten Crypt', floor: '#2c2f45', line: '#1b1d2f', wallTop: '#1f2135', rim: '#4d5378',
+    brick: '#4d5275', brickDark: '#3a3e5c', brickLight: '#6a709c', mortar: '#222439',
+    banner: '#3a86ff', emblem: '#c0cbdc', dark: '5,5,14', glow: '120,140,255' },
+  { name: 'The Mossy Halls',     floor: '#2a3830', line: '#18231d', wallTop: '#18231c', rim: '#44624e',
+    brick: '#4a6350', brickDark: '#394d3e', brickLight: '#699071', mortar: '#1c2921',
+    banner: '#3e8948', emblem: '#fee761', dark: '3,9,6', glow: '120,255,160' },
+  { name: 'The Ember Throne',    floor: '#3c2828', line: '#261718', wallTop: '#261617', rim: '#74403a',
+    brick: '#6e3d38', brickDark: '#562e2b', brickLight: '#9a5b4e', mortar: '#291516',
+    banner: '#a22633', emblem: '#feae34', dark: '12,3,3', glow: '255,140,90' },
 ];
 
 // ============================================================
@@ -195,6 +198,7 @@ const PALETTE = {
   k: '#1a1423', w: '#f4f4f4', g: '#9aa5b1', G: '#5b6470', r: '#e43b44', R: '#a22633',
   o: '#f77622', y: '#fee761', b: '#3a86ff', B: '#1d4ed8', n: '#63c74d', N: '#3e8948',
   p: '#b55088', P: '#68386c', s: '#e8b796', t: '#b86f50', T: '#733e39', c: '#2ce8f5', m: '#ead4aa',
+  a: '#feae34',
 };
 
 const SPRITE_DATA = {
@@ -219,6 +223,9 @@ const SPRITE_DATA = {
   merchant: { rows: [
     '....kkkk....', '...kppppk...', '..kppPPppk..', '..kpkkkkpk..', '..kpykkypk..', '..kpkkkkpk..',
     '.kkppppppkk.', 'kpkpptyppkpk', 'kpkppppppkpk', '.kkPPPPPPkk.', '..kPPPPPPk..', '..kkkkkkkk..' ] },
+  flame0: { scale: 2, rows: ['..o...', '.oo...', '.oao..', 'oaayo.', 'oaywao', 'oaywao', '.oaao.', '..oo..'] },
+  flame1: { scale: 2, rows: ['...o..', '..oo..', '.oao..', '.oayo.', 'oaywao', 'oayyao', '.oaao.', '..oo..'] },
+  flame2: { scale: 2, rows: ['....o.', '..oo..', '..oao.', '.oyao.', 'oawyao', 'oayyao', '.oaao.', '..oo..'] },
   chest: { rows: [
     '.kkkkkkkkkk.', 'kttttttttttk', 'ktttttttttTk', 'kyyyykkyyyyk', 'kTTTkyykTTTk', 'kttttkkttttk',
     'kttttttttTTk', 'kTTTTTTTTTTk', '.kkkkkkkkkk.' ] },
@@ -239,6 +246,10 @@ const SPRITE_DATA = {
   staff:  { rows: ['.....kk.', '....koyk', '....kook', '...ktkk.', '..ktk...', '.ktk....', 'ktk.....', 'kk......'] },
 };
 
+const STAIN_COLORS = {                 // what each monster leaves on the floor
+  slime: ['#3e8948', '#265c42', '#63c74d'], mini: ['#3e8948', '#265c42'], bat: ['#68386c', '#3e2148'],
+  skeleton: ['#ead4aa', '#b9a47c', '#8b9bb4'], boss: ['#181425', '#3e2731', '#be4a2f'],
+};
 const DEATH_COLORS = {
   slime: ['#63c74d', '#3e8948', '#f4f4f4'], mini: ['#63c74d', '#3e8948'],
   bat: ['#b55088', '#68386c', '#e43b44'], skeleton: ['#ead4aa', '#f4f4f4', '#9aa5b1'],
@@ -399,7 +410,6 @@ const game = {
   transition: null, banner: null,
 };
 let dungeon = null;                   // { tiles, explored, rooms, start, exitRoom, bossRoom, torches, gates }
-let tileArt = null;
 let flow = new Int16Array(MAP_W * MAP_H);   // BFS distance to the player, for enemy pathing
 let player = null;
 let enemies = [], bullets = [], items = [], chests = [], props = [], particles = [], numbers = [], slashes = [], toasts = [];
@@ -680,62 +690,277 @@ function populateFloor(floor) {
 }
 
 // ============================================================
-// TILE ART  (drawn once per floor into small canvases)
+// DUNGEON ART
+// The whole floor is painted once into mapArt. Each tile is copied into mapSeen when it is first
+// explored, so drawing the dungeon every frame is a single blit.
 // ============================================================
-function buildTiles(th) {
-  const art = { floor: [] };
-  const tile = draw => { const c = makeCanvas(TILE, TILE); draw(c.getContext('2d')); return c; };
-  const paintFloor = (g, v) => {
-    g.fillStyle = v % 2 ? th.floorAlt : th.floor; g.fillRect(0, 0, TILE, TILE);
-    g.fillStyle = th.line; g.fillRect(0, TILE - 2, TILE, 2); g.fillRect(TILE - 2, 0, 2, TILE);
-    for (let i = 0; i < 5; i++) {
-      g.fillStyle = i % 2 ? th.speck : th.line;
-      g.fillRect(2 + Math.floor(Math.random() * 13) * 2, 2 + Math.floor(Math.random() * 13) * 2, 2, 2);
-    }
-    if (v === 3) { g.fillStyle = th.line; for (let i = 0; i < 6; i++) g.fillRect(8 + i * 2, 10 + i * 2 + (i % 2) * 2, 2, 2); }
-  };
-  for (let v = 0; v < 4; v++) art.floor.push(tile(g => paintFloor(g, v)));
+const ART = 2;                                        // screen pixels per environment art pixel
+const TP = TILE / ART;                                // art pixels per tile
+const mapArt = makeCanvas(MAP_W * TILE, MAP_H * TILE), actx = mapArt.getContext('2d');
+const mapSeen = makeCanvas(MAP_W * TILE, MAP_H * TILE), sctx = mapSeen.getContext('2d');
+let artRng = Math.random;
+let pillarArt = null;
 
-  art.face = tile(g => {
-    g.fillStyle = th.face; g.fillRect(0, 0, TILE, TILE);
-    for (let row = 0; row < 4; row++) {
-      const y = row * 8, off = row % 2 ? 8 : 0;
-      g.fillStyle = th.faceDark;
-      g.fillRect(off + (row === 1 ? 2 : 18) % TILE, y, 14, 6);
-      g.fillStyle = th.mortar;
-      g.fillRect(0, y + 6, TILE, 2);
-      for (let x = off; x < TILE; x += 16) g.fillRect(x, y, 2, 6);
+// Lightens (amt > 0) or darkens (amt < 0) a #rrggbb colour.
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16), t = amt < 0 ? 0 : 255, k = Math.abs(amt);
+  const mix = v => Math.round(v + (t - v) * k);
+  return `rgb(${mix(n >> 16)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
+}
+function ap(x, y, w, h, color, g = actx) { g.fillStyle = color; g.fillRect(x * ART, y * ART, w * ART, h * ART); }
+function openAt(tx, ty) { return inBounds(tx, ty) && dungeon.tiles[idx(tx, ty)] !== T_WALL; }
+function isFaceTile(tx, ty) { return tileAt(tx, ty) === T_WALL && openAt(tx, ty + 1); }
+const theme = () => THEMES[game.floor - 1];
+
+function paintFloor(tx, ty) {
+  const th = theme(), x = tx * TP, y = ty * TP, r = artRng;
+  ap(x, y, TP, TP, shade(th.floor, (r() - 0.5) * 0.12));
+  ap(x, y, TP, 1, shade(th.floor, 0.08)); ap(x, y, 1, TP, shade(th.floor, 0.05));      // lit edges
+  ap(x, y + TP - 1, TP, 1, th.line); ap(x + TP - 1, y, 1, TP, th.line);                // grout
+  const roll = r();
+  if (roll < 0.14) {                                  // four small slabs
+    ap(x, y + 7, TP, 1, th.line); ap(x + 7, y, 1, TP, th.line);
+    ap(x + 8, y + 8, 7, 1, shade(th.floor, 0.08)); ap(x, y + 8, 7, 1, shade(th.floor, 0.08));
+  } else if (roll < 0.22) {                           // crack
+    let cx = x + 4 + Math.floor(r() * 6), cy = y + 2;
+    for (let i = 0; i < 10; i++) { ap(cx, cy++, 1, 1, th.line); if (r() < 0.55) cx = clamp(cx + (r() < 0.5 ? -1 : 1), x + 1, x + TP - 3); }
+  } else if (roll < 0.30) {                           // pebbles
+    for (let i = 0; i < 3; i++) {
+      const px = x + 2 + Math.floor(r() * 11), py = y + 2 + Math.floor(r() * 10);
+      ap(px, py, 2, 1, shade(th.floor, 0.25)); ap(px, py + 1, 2, 1, th.line);
     }
-    g.fillStyle = th.light; g.fillRect(0, 0, TILE, 3);
-    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, TILE - 3, TILE, 3);
-  });
-  art.top = tile(g => {
-    g.fillStyle = th.wallTop; g.fillRect(0, 0, TILE, TILE);
-    g.fillStyle = th.mortar; g.fillRect(6, 8, 4, 2); g.fillRect(20, 22, 6, 2);
-  });
-  art.pillar = tile(g => {
-    paintFloor(g, 0);
-    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(4, 22, 26, 9);
-    g.fillStyle = th.mortar; g.fillRect(5, 1, 22, 28);
-    g.fillStyle = th.face; g.fillRect(7, 3, 18, 24);
-    g.fillStyle = th.faceDark; g.fillRect(19, 9, 6, 18);
-    g.fillStyle = th.light; g.fillRect(7, 3, 18, 6);
-  });
-  art.stairs = tile(g => {
-    paintFloor(g, 0);
-    g.fillStyle = th.light; g.fillRect(3, 3, 26, 26);
-    const shades = ['#3a3a44', '#2a2a33', '#1c1c24', '#101016', '#07070b'];
-    shades.forEach((col, i) => { g.fillStyle = col; g.fillRect(5, 5 + i * 4.4, 22, 5); });
-    g.fillStyle = 'rgba(255,255,255,0.12)';
-    shades.forEach((col, i) => g.fillRect(5, 5 + i * 4.4, 22, 1));
-  });
-  art.gate = tile(g => {
-    paintFloor(g, 1);
-    g.fillStyle = '#1a1423'; for (let x = 2; x < TILE; x += 8) g.fillRect(x, 0, 5, TILE);
-    g.fillStyle = '#9aa5b1'; for (let x = 3; x < TILE; x += 8) g.fillRect(x, 0, 3, TILE);
-    g.fillStyle = '#5b6470'; g.fillRect(0, 6, TILE, 3); g.fillRect(0, 22, TILE, 3);
-  });
-  return art;
+  }
+  for (let i = 0; i < 4; i++) ap(x + 1 + Math.floor(r() * 13), y + 1 + Math.floor(r() * 13), 1, 1, shade(th.floor, r() < 0.5 ? 0.1 : -0.14));
+  const extra = r();
+  if (game.floor === 1 && extra < 0.015) {            // an old bone
+    const px = x + 3 + Math.floor(r() * 7), py = y + 4 + Math.floor(r() * 8);
+    ap(px, py, 5, 1, '#ead4aa'); ap(px - 1, py - 1, 1, 3, '#ead4aa'); ap(px + 5, py - 1, 1, 3, '#ead4aa'); ap(px, py + 1, 5, 1, 'rgba(0,0,0,0.3)');
+  } else if (game.floor === 2 && extra < 0.2) {       // moss
+    const mx = x + 2 + Math.floor(r() * 10), my = y + 2 + Math.floor(r() * 10);
+    for (let i = 0; i < 9; i++) ap(mx + Math.floor(r() * 5) - 2, my + Math.floor(r() * 4) - 1, 1 + Math.floor(r() * 2), 1, r() < 0.2 ? '#63c74d' : r() < 0.5 ? '#3e8948' : '#265c42');
+  } else if (game.floor === 2 && extra < 0.24) {      // puddle
+    const px = x + 3 + Math.floor(r() * 4), py = y + 5 + Math.floor(r() * 5);
+    ap(px + 1, py, 6, 1, '#193c3e'); ap(px, py + 1, 8, 2, '#193c3e'); ap(px + 1, py + 3, 6, 1, '#193c3e'); ap(px + 2, py + 1, 3, 1, '#3e8948');
+  } else if (game.floor === 3 && extra < 0.08) {      // glowing crack
+    let cx = x + 2, cy = y + 4 + Math.floor(r() * 8);
+    for (let i = 0; i < 11; i++) { ap(cx, cy + 1, 1, 1, '#a22633'); ap(cx, cy, 1, 1, i % 3 ? '#f77622' : '#feae34'); cx++; if (r() < 0.5) cy = clamp(cy + (r() < 0.5 ? -1 : 1), y + 2, y + TP - 4); }
+  } else if (game.floor === 3 && extra < 0.12) {      // ash
+    for (let i = 0; i < 7; i++) ap(x + 3 + Math.floor(r() * 9), y + 6 + Math.floor(r() * 6), 1, 1, r() < 0.5 ? '#5a6988' : '#262b44');
+  }
+}
+
+function paintStairs(tx, ty) {
+  const th = theme(), x = tx * TP, y = ty * TP;
+  ap(x, y, TP, TP, th.line); ap(x + 1, y + 1, 14, 14, shade(th.floor, 0.28)); ap(x + 2, y + 2, 12, 12, '#05040a');
+  for (let i = 0; i < 6; i++) { ap(x + 2, y + 2 + i * 2, 12, 2, shade(th.floor, 0.1 - i * 0.2)); ap(x + 2, y + 2 + i * 2, 12, 1, shade(th.floor, 0.3 - i * 0.2)); }
+  ap(x + 2, y + 2, 1, 12, 'rgba(0,0,0,0.35)'); ap(x + 13, y + 2, 1, 12, 'rgba(0,0,0,0.35)');
+}
+
+function paintGate(tx, ty) {
+  const x = tx * TP, y = ty * TP;
+  ap(x, y, TP, TP, 'rgba(0,0,0,0.45)');
+  for (const bx of [1, 4, 7, 10, 13]) { ap(x + bx, y, 2, TP, '#181425'); ap(x + bx, y, 1, TP - 1, '#8b9bb4'); ap(x + bx, y + TP - 2, 2, 2, '#c0cbdc'); }
+  for (const by of [3, 10]) { ap(x, y + by, TP, 2, '#181425'); ap(x, y + by, TP, 1, '#5a6988'); }
+}
+
+// Soft shadows where the floor meets a wall.
+function paintShadows(tx, ty) {
+  const x = tx * TP, y = ty * TP;
+  if (!openAt(tx, ty - 1)) [0.4, 0.32, 0.24, 0.15, 0.07].forEach((a, i) => ap(x, y + i, TP, 1, `rgba(0,0,0,${a})`));
+  if (!openAt(tx - 1, ty)) [0.28, 0.13].forEach((a, i) => ap(x + i, y, 1, TP, `rgba(0,0,0,${a})`));
+  if (!openAt(tx + 1, ty)) [0.28, 0.13].forEach((a, i) => ap(x + TP - 1 - i, y, 1, TP, `rgba(0,0,0,${a})`));
+  if (!openAt(tx, ty + 1)) ap(x, y + TP - 1, TP, 1, 'rgba(0,0,0,0.22)');
+}
+
+function paintWall(tx, ty) {
+  const th = theme(), x = tx * TP, y = ty * TP, r = artRng;
+  const L = openAt(tx - 1, ty), R = openAt(tx + 1, ty), U = openAt(tx, ty - 1), rimDark = shade(th.rim, -0.35);
+  if (isFaceTile(tx, ty)) {
+    ap(x, y + 5, TP, 11, th.mortar);                  // brick front
+    for (let row = 0; row < 3; row++) {
+      const by = y + 5 + row * 4;
+      for (let bx = row % 2 ? -4 : 0; bx < TP; bx += 8) {
+        const x0 = Math.max(bx, 0), x1 = Math.min(bx + 7, TP);
+        if (x1 <= x0) continue;
+        const tone = (r() - 0.5) * 0.2;
+        ap(x + x0, by, x1 - x0, 3, shade(th.brick, tone));
+        ap(x + x0, by, x1 - x0, 1, shade(th.brick, tone + 0.16));
+        ap(x + x0, by + 2, x1 - x0, 1, shade(th.brick, tone - 0.22));
+      }
+    }
+    ap(x, y + 15, TP, 1, 'rgba(0,0,0,0.35)');
+    ap(x, y, TP, 5, th.wallTop);                      // top of the wall, with a lit lip
+    ap(x, y + 3, TP, 1, th.rim); ap(x, y + 4, TP, 1, rimDark);
+    if (U) ap(x, y, TP, 1, th.rim);
+    if (L) { ap(x, y, 1, 4, th.rim); ap(x, y + 5, 1, 11, 'rgba(0,0,0,0.3)'); }
+    if (R) { ap(x + TP - 1, y, 1, 4, th.rim); ap(x + TP - 1, y + 5, 1, 11, 'rgba(0,0,0,0.3)'); }
+    const roll = r();
+    if (roll < 0.09) {                                // cracked bricks
+      let cx = x + 3 + Math.floor(r() * 10), cy = y + 5;
+      for (let i = 0; i < 9; i++) { ap(cx, cy++, 1, 1, th.mortar); if (r() < 0.5) cx = clamp(cx + (r() < 0.5 ? -1 : 1), x + 1, x + TP - 2); }
+    } else if (game.floor === 2 && roll < 0.38) {     // hanging vines
+      for (let v = 1 + Math.floor(r() * 3); v > 0; v--) {
+        const vx = x + 1 + Math.floor(r() * 14), len = 3 + Math.floor(r() * 9);
+        for (let i = 0; i < len; i++) ap(vx + (i % 3 === 2 ? 1 : 0), y + 3 + i, 1, 1, i === len - 1 ? '#63c74d' : i % 2 ? '#3e8948' : '#265c42');
+      }
+    } else if (game.floor === 3 && roll < 0.2) {      // ember seams
+      let cx = x + 2 + Math.floor(r() * 12), cy = y + 6;
+      for (let i = 0; i < 8; i++) { ap(cx, cy++, 1, 1, i % 2 ? '#f77622' : '#feae34'); if (r() < 0.5) cx = clamp(cx + (r() < 0.5 ? -1 : 1), x + 1, x + TP - 2); }
+    } else if (game.floor !== 2 && roll < 0.16) {     // rusty chain
+      const cx = x + 3 + Math.floor(r() * 10);
+      for (let i = 0; i < 8; i++) ap(cx + (i % 2), y + 5 + i, 1, 1, i % 2 ? '#8b9bb4' : '#5a6988');
+      ap(cx - 1, y + 13, 3, 2, '#5a6988'); ap(cx, y + 14, 1, 1, th.mortar);
+    }
+    return;
+  }
+  ap(x, y, TP, TP, th.wallTop);
+  for (let i = 0; i < 3; i++) ap(x + 2 + Math.floor(r() * 11), y + 2 + Math.floor(r() * 12), 2, 1, shade(th.wallTop, r() < 0.5 ? 0.1 : -0.25));
+  if (U) { ap(x, y, TP, 1, th.rim); ap(x, y + 1, TP, 1, rimDark); }
+  const sideTop = (ox) => isFaceTile(tx + ox, ty) ? 4 : 0;     // beside a brick front the edge starts under the lip
+  if (L || isFaceTile(tx - 1, ty)) { const s = sideTop(-1); ap(x, y + s, 1, TP - s, th.rim); ap(x + 1, y + s, 1, TP - s, rimDark); }
+  if (R || isFaceTile(tx + 1, ty)) { const s = sideTop(1); ap(x + TP - 1, y + s, 1, TP - s, th.rim); ap(x + TP - 2, y + s, 1, TP - s, rimDark); }
+  if (!U && !R && openAt(tx + 1, ty - 1)) ap(x + TP - 1, y, 1, 1, th.rim);
+  if (!U && !L && openAt(tx - 1, ty - 1)) ap(x, y, 1, 1, th.rim);
+}
+
+// A rune circle of single art pixels, centred on a tile centre.
+function paintCircle(wx, wy, radius, color, dash) {
+  const cx = wx / ART, cy = wy / ART, steps = Math.ceil(radius * 7);
+  for (let i = 0; i < steps; i++) {
+    if (dash && Math.floor(i / dash) % 2) continue;
+    const a = i / steps * TAU, px = Math.round(cx + Math.cos(a) * radius), py = Math.round(cy + Math.sin(a) * radius);
+    if (openAt(Math.floor(px / TP), Math.floor(py / TP))) ap(px, py, 1, 1, color);
+  }
+}
+
+function paintRoomDecor(room) {
+  const th = theme(), r = artRng, wx = room.cx * TILE + TILE / 2, wy = room.cy * TILE + TILE / 2;
+  if (room === dungeon.shopRoom) {                    // the merchant's rug
+    const hw = Math.min(3, (room.w - 3) >> 1), x0 = (room.cx - hw) * TP + 2, x1 = (room.cx + hw + 1) * TP - 2;
+    const y0 = Math.max(room.y, room.cy - 2) * TP + 12, y1 = Math.min(room.y + room.h, room.cy + 3) * TP - 3;
+    ap(x0, y0, x1 - x0, y1 - y0, '#733e39'); ap(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2, '#a22633');
+    ap(x0 + 2, y0 + 2, x1 - x0 - 4, 1, '#feae34'); ap(x0 + 2, y1 - 3, x1 - x0 - 4, 1, '#feae34');
+    ap(x0 + 2, y0 + 2, 1, y1 - y0 - 4, '#feae34'); ap(x1 - 3, y0 + 2, 1, y1 - y0 - 4, '#feae34');
+    for (let py = y0 + 5; py < y1 - 5; py += 4) for (let px = x0 + 5 + (((py - y0) >> 2) % 2) * 3; px < x1 - 5; px += 6) ap(px, py, 2, 2, '#be4a2f');
+    for (let px = x0 + 1; px < x1 - 1; px += 2) { ap(px, y0 - 1, 1, 1, '#ead4aa'); ap(px, y1, 1, 1, '#ead4aa'); }
+  }
+  if (room.kind === 'boss') {                         // summoning circle under the throne
+    for (const [rad, col, dash] of [[58, '#a22633', 0], [54, '#be4a2f', 6], [34, '#a22633', 0], [14, '#f77622', 3]]) paintCircle(wx, wy, rad, col, dash);
+    for (let k = 0; k < 8; k++) {
+      const a = k * TAU / 8, px = Math.round((wx + Math.cos(a) * 88) / ART), py = Math.round((wy + Math.sin(a) * 88) / ART);
+      ap(px - 1, py, 3, 1, '#f77622'); ap(px, py - 1, 1, 3, '#f77622');
+    }
+  } else if (room.kind === 'start' && room !== dungeon.shopRoom) {
+    paintCircle(wx, wy, 20, shade(th.rim, 0.25), 0); paintCircle(wx, wy, 16, th.rim, 4);
+  }
+  if (room.kind === 'boss') return;
+  if (game.floor !== 3) for (const side of [0, 1]) {  // cobwebs in the top corners
+    if (r() < 0.45) continue;
+    const tx = side ? room.x + room.w - 1 : room.x, ty = room.y;
+    if (tileAt(tx, ty) !== T_FLOOR || openAt(tx + (side ? 1 : -1), ty) || openAt(tx, ty - 1)) continue;
+    const ox = side ? (tx + 1) * TP - 1 : tx * TP, d = side ? -1 : 1, oy = ty * TP, web = 'rgba(225,230,245,0.42)';
+    for (let i = 0; i < 9; i++) { ap(ox + d * i, oy, 1, 1, web); ap(ox, oy + i, 1, 1, web); if (i < 7) ap(ox + d * i, oy + i, 1, 1, web); }
+    for (const [a, b] of [[3, 1], [2, 2], [1, 3], [7, 1], [6, 3], [5, 4], [4, 5], [3, 6], [1, 7]]) ap(ox + d * a, oy + b, 1, 1, web);
+  }
+  for (let n = game.floor === 2 ? 0 : 1 + Math.floor(r() * 2); n > 0; n--) {      // skulls left by earlier adventurers
+    const tx = room.x + 1 + Math.floor(r() * (room.w - 2)), ty = room.y + (r() < 0.5 ? 0 : room.h - 1);
+    if (tileAt(tx, ty) !== T_FLOOR) continue;
+    const px = tx * TP + 3 + Math.floor(r() * 6), py = ty * TP + 6 + Math.floor(r() * 4);
+    ap(px, py + 4, 6, 1, 'rgba(0,0,0,0.3)');
+    ap(px + 1, py, 3, 1, '#ead4aa'); ap(px, py + 1, 5, 2, '#ead4aa'); ap(px + 1, py + 3, 3, 1, '#b9a47c');
+    ap(px + 1, py + 1, 1, 1, '#181425'); ap(px + 3, py + 1, 1, 1, '#181425');
+  }
+  if (game.floor === 2) for (let n = 2 + Math.floor(r() * 3); n > 0; n--) {       // little mushrooms
+    const tx = room.x + Math.floor(r() * room.w), ty = room.y + Math.floor(r() * room.h);
+    if (tileAt(tx, ty) !== T_FLOOR || (openAt(tx - 1, ty) && openAt(tx + 1, ty) && openAt(tx, ty - 1))) continue;
+    const px = tx * TP + 3 + Math.floor(r() * 9), py = ty * TP + 6 + Math.floor(r() * 6);
+    ap(px, py, 3, 1, '#e43b44'); ap(px - 1, py + 1, 5, 1, '#a22633'); ap(px, py + 1, 1, 1, '#ffffff'); ap(px + 1, py + 2, 1, 2, '#ead4aa');
+  }
+  // Banners between the torches on the top wall.
+  for (let tx = room.x + 1; tx < room.x + room.w - 1; tx++) {
+    if (!isFaceTile(tx, room.y - 1) || dungeon.torches.some(t => t.tx === tx && t.ty === room.y - 1) || r() > 0.22) continue;
+    const x = tx * TP + 5, y = (room.y - 1) * TP + 5;
+    ap(x - 1, y, 8, 1, '#feae34');
+    ap(x, y + 1, 6, 8, th.banner); ap(x + 4, y + 1, 2, 8, shade(th.banner, -0.3)); ap(x, y + 1, 1, 8, shade(th.banner, 0.25));
+    ap(x + 2, y + 3, 2, 2, th.emblem); ap(x + 1, y + 4, 4, 1, th.emblem);
+    ap(x, y + 9, 2, 1, th.banner); ap(x + 4, y + 9, 2, 1, shade(th.banner, -0.3));
+    tx++;
+  }
+}
+
+function buildPillarArt() {
+  const th = theme(), c = makeCanvas(TILE, 52), g = c.getContext('2d');
+  ap(1, 21, 14, 5, th.mortar, g); ap(2, 22, 12, 3, th.brick, g); ap(2, 22, 12, 1, th.brickLight, g); ap(11, 23, 3, 2, th.brickDark, g);   // base
+  ap(3, 4, 10, 18, th.mortar, g); ap(4, 4, 8, 18, th.brick, g); ap(4, 4, 2, 18, th.brickLight, g); ap(9, 4, 3, 18, th.brickDark, g);     // shaft
+  for (const by of [9, 15]) { ap(4, by, 8, 1, th.mortar, g); ap(4, by + 1, 8, 1, th.brickLight, g); }
+  ap(1, 0, 14, 5, th.mortar, g); ap(2, 1, 12, 3, th.brick, g); ap(2, 1, 12, 1, th.rim, g); ap(11, 2, 3, 2, th.brickDark, g);             // cap
+  return c;
+}
+
+function copyTile(i) {
+  const x = (i % MAP_W) * TILE, y = ((i / MAP_W) | 0) * TILE;
+  sctx.clearRect(x, y, TILE, TILE);
+  sctx.drawImage(mapArt, x, y, TILE, TILE, x, y, TILE, TILE);
+}
+function reveal(tx, ty) {
+  if (!inBounds(tx, ty)) return;
+  const i = idx(tx, ty);
+  if (dungeon.explored[i]) return;
+  dungeon.explored[i] = 1;
+  copyTile(i);
+}
+// Repaints one floor-level tile after it changes (boss gates opening and closing).
+function repaintTile(tx, ty) {
+  paintFloor(tx, ty);
+  paintShadows(tx, ty);
+  if (tileAt(tx, ty) === T_GATE) paintGate(tx, ty);
+  if (dungeon.explored[idx(tx, ty)]) copyTile(idx(tx, ty));
+}
+
+function paintDungeon() {
+  const d = dungeon;
+  artRng = mulberry32(game.seed * 31 + game.floor);
+  actx.clearRect(0, 0, mapArt.width, mapArt.height);
+  sctx.clearRect(0, 0, mapSeen.width, mapSeen.height);
+  d.pillars = [];
+  for (let ty = 0; ty < MAP_H; ty++) for (let tx = 0; tx < MAP_W; tx++) if (openAt(tx, ty)) paintFloor(tx, ty);
+  for (const room of d.rooms) paintRoomDecor(room);
+  for (let ty = 0; ty < MAP_H; ty++) for (let tx = 0; tx < MAP_W; tx++) {
+    const t = d.tiles[idx(tx, ty)];
+    if (t === T_WALL) {
+      let near = false;
+      for (let oy = -1; oy <= 1 && !near; oy++) for (let ox = -1; ox <= 1; ox++) if (openAt(tx + ox, ty + oy)) { near = true; break; }
+      if (near) paintWall(tx, ty);
+      continue;
+    }
+    if (t === T_STAIRS) paintStairs(tx, ty);
+    paintShadows(tx, ty);
+    if (t === T_PILLAR) {
+      d.pillars.push({ tx, ty, y: ty * TILE + TILE - 8 });
+      ap(tx * TP + 1, ty * TP + 12, 15, 4, 'rgba(0,0,0,0.35)');
+    }
+  }
+  for (const t of d.torches) {                        // iron brackets; the flames are animated separately
+    const x = t.tx * TP + 7, y = t.ty * TP;
+    ap(x - 1, y + 9, 4, 1, '#181425'); ap(x, y + 10, 2, 4, '#733e39'); ap(x, y + 10, 1, 4, '#b86f50'); ap(x - 1, y + 8, 4, 1, '#5a6988');
+  }
+  pillarArt = buildPillarArt();
+}
+
+// Stains the floor where something died or broke. Only ever marks plain floor tiles.
+function splat(wx, wy, colors, count, spread) {
+  const touched = new Set();
+  actx.globalAlpha = 0.6;
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU, dd = Math.sqrt(Math.random()) * spread;
+    const px = Math.floor((wx + Math.cos(a) * dd) / ART), py = Math.floor((wy + Math.sin(a) * dd * 0.7) / ART);
+    const tx = Math.floor(px / TP), ty = Math.floor(py / TP);
+    if (tileAt(tx, ty) !== T_FLOOR) continue;
+    ap(px, py, 1 + (Math.random() < 0.4 && px % TP < TP - 1 ? 1 : 0), 1, colors[Math.floor(Math.random() * colors.length)]);
+    touched.add(idx(tx, ty));
+  }
+  actx.globalAlpha = 1;
+  for (const i of touched) if (dungeon.explored[i]) copyTile(i);
 }
 
 // ============================================================
@@ -810,19 +1035,16 @@ function chaseVector(e) {
 // ============================================================
 // FOG OF WAR
 // ============================================================
-function revealTile(tx, ty) {
-  if (inBounds(tx, ty)) dungeon.explored[idx(tx, ty)] = 1;
-}
 function castReveal(x0, y0, x1, y1) {
   const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx - dy, x = x0, y = y0;
   for (;;) {
     if (!inBounds(x, y)) return;
     const t = dungeon.tiles[idx(x, y)];
-    dungeon.explored[idx(x, y)] = 1;
+    reveal(x, y);
     if (t === T_WALL || t === T_GATE) return;
     for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++)       // light up the walls beside open floor
-      if (tileAt(x + ox, y + oy) === T_WALL) revealTile(x + ox, y + oy);
+      if (tileAt(x + ox, y + oy) === T_WALL) reveal(x + ox, y + oy);
     if (x === x1 && y === y1) return;
     const e2 = 2 * err;
     if (e2 > -dy) { err -= dy; x += sx; }
@@ -841,7 +1063,7 @@ function updateFOV(force) {
       room.seen = true;
       if (room === dungeon.shopRoom) toast('A merchant! Spend your gold here.', '#63c74d');
       for (let y = room.y - 1; y <= room.y + room.h; y++)
-        for (let x = room.x - 1; x <= room.x + room.w; x++) revealTile(x, y);
+        for (let x = room.x - 1; x <= room.x + room.w; x++) reveal(x, y);
     }
     if (!room.awake) wakeRoom(room);
   }
@@ -1020,6 +1242,7 @@ class Player {
     sfx.hurt();
     addNumber(this.x, this.y - 22, '-' + dmg, '#ff5566');
     burst(this.x, this.y, ['#e43b44', '#a22633'], 8, 130, 0.4, 3);
+    splat(this.x, this.y + 8, ['#a22633', '#733e39'], 7, 14);
     if (this.hp <= 0) { this.hp = 0; die(); }
     return true;
   }
@@ -1080,6 +1303,7 @@ function killEnemy(e) {
   burst(e.x, e.y, DEATH_COLORS[e.type], 14, 150, 0.55, 3);
   sfx.kill();
   hitstop(HITSTOP_KILL);
+  splat(e.x, e.y + 6, STAIN_COLORS[e.type], e.type === 'mini' ? 8 : 18, e.r + 8);
   const g = ENEMY_STATS[e.type].gold;
   for (let i = randInt(g[0], g[1]); i > 0; i--) dropItem('gold', e.x, e.y, { value: 1 });
   if (e.type !== 'mini' && chance(POTION_DROP_CHANCE)) dropItem('potion', e.x, e.y);
@@ -1288,7 +1512,7 @@ function sealArena() {
   room.sealed = true;
   for (let y = room.y - 1; y <= room.y + room.h; y++) for (let x = room.x - 1; x <= room.x + room.w; x++) {
     const onRing = x === room.x - 1 || x === room.x + room.w || y === room.y - 1 || y === room.y + room.h;
-    if (onRing && tileAt(x, y) === T_FLOOR) { dungeon.tiles[idx(x, y)] = T_GATE; dungeon.gates.push(idx(x, y)); }
+    if (onRing && tileAt(x, y) === T_FLOOR) { dungeon.tiles[idx(x, y)] = T_GATE; dungeon.gates.push(idx(x, y)); repaintTile(x, y); }
   }
   const boss = enemies.find(e => e.type === 'boss');
   if (boss) { boss.awake = true; setBoss(boss, 'intro', 1.6); }
@@ -1308,9 +1532,10 @@ function finishBoss(e) {
   e.dead = true;
   player.kills++;
   burst(e.x, e.y, DEATH_COLORS.boss, 60, 320, 1.1, 5);
+  splat(e.x, e.y + 10, STAIN_COLORS.boss, 160, 70);
   shake(16); sfx.boom(); sfx.win(); hitstop(HITSTOP_BOSS);
   for (let i = 0; i < ENEMY_STATS.boss.gold[0]; i++) dropItem('gold', e.x, e.y, { value: 2 });
-  for (const i of dungeon.gates) dungeon.tiles[i] = T_FLOOR;
+  for (const i of dungeon.gates) { dungeon.tiles[i] = T_FLOOR; repaintTile(i % MAP_W, (i / MAP_W) | 0); }
   dungeon.gates = [];
   updateFOV(true);
   toast('The Ember King is slain!', '#fee761');
@@ -1365,6 +1590,7 @@ function updateEnemies(dt) {
 function breakPot(pr) {
   pr.dead = true;
   burst(pr.x, pr.y, ['#b86f50', '#733e39', '#ead4aa'], 10, 140, 0.45, 3);
+  splat(pr.x, pr.y + 4, ['#b86f50', '#733e39'], 10, 14);
   noise(0.1, 0.18, 1400);
   for (let i = randInt(POT_GOLD[0], POT_GOLD[1]); i > 0; i--) dropItem('gold', pr.x, pr.y, { value: 1 });
   if (chance(POT_POTION_CHANCE)) dropItem('potion', pr.x, pr.y);
@@ -1537,7 +1763,7 @@ function enterFloor(n) {
   game.floor = n;
   rng = mulberry32(game.seed + n * 7919);
   dungeon = generateFloor(n);
-  tileArt = buildTiles(THEMES[n - 1]);
+  paintDungeon();
   populateFloor(n);
   player.x = dungeon.start.cx * TILE + TILE / 2;
   player.y = dungeon.start.cy * TILE + TILE / 2;
@@ -1645,33 +1871,14 @@ function update(dt) {
 // ============================================================
 // RENDER — WORLD
 // ============================================================
-const FLOOR_VARIANTS = [0, 1, 0, 1, 2, 0, 1, 2, 0, 3, 1];   // cracked tiles (3) stay rare
 function drawTiles(g, cx, cy) {
-  const x0 = Math.max(0, Math.floor(cx / TILE)), x1 = Math.min(MAP_W - 1, Math.floor((cx + VIEW_W) / TILE));
-  const y0 = Math.max(0, Math.floor(cy / TILE)), y1 = Math.min(MAP_H - 1, Math.floor((cy + VIEW_H) / TILE));
-  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-    const i = idx(tx, ty);
-    if (!dungeon.explored[i]) continue;
-    const t = dungeon.tiles[i], px = tx * TILE, py = ty * TILE;
-    if (t === T_WALL) {
-      const below = ty + 1 < MAP_H ? dungeon.tiles[i + MAP_W] : T_WALL;
-      g.drawImage(below !== T_WALL ? tileArt.face : tileArt.top, px, py);
-      continue;
-    }
-    if (t === T_PILLAR) g.drawImage(tileArt.pillar, px, py);
-    else if (t === T_STAIRS) g.drawImage(tileArt.stairs, px, py);
-    else if (t === T_GATE) g.drawImage(tileArt.gate, px, py);
-    else g.drawImage(tileArt.floor[FLOOR_VARIANTS[(((tx * 73856093) ^ (ty * 19349663)) >>> 0) % FLOOR_VARIANTS.length]], px, py);
-    if (ty > 0 && dungeon.tiles[i - MAP_W] === T_WALL) {       // soft shadow under walls
-      g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(px, py, TILE, 5);
-      g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(px, py + 5, TILE, 5);
-    }
-  }
+  const sx = Math.max(0, cx), sy = Math.max(0, cy), ex = Math.min(mapSeen.width, cx + VIEW_W), ey = Math.min(mapSeen.height, cy + VIEW_H);
+  if (ex > sx && ey > sy) g.drawImage(mapSeen, sx, sy, ex - sx, ey - sy, sx, sy, ex - sx, ey - sy);
   if (dungeon.exitRoom) {                                        // stairs shimmer
     const s = dungeon.exitRoom;
     if (dungeon.explored[idx(s.cx, s.cy)]) {
       g.fillStyle = `rgba(254,231,97,${0.1 + 0.08 * Math.sin(game.anim * 4)})`;
-      g.fillRect(s.cx * TILE + 3, s.cy * TILE + 3, 26, 26);
+      g.fillRect(s.cx * TILE + 4, s.cy * TILE + 4, 24, 24);
     }
   }
 }
@@ -1679,11 +1886,7 @@ function drawTiles(g, cx, cy) {
 function drawTorches(g) {
   for (const t of dungeon.torches) {
     if (!dungeon.explored[idx(t.tx, t.ty)]) continue;
-    const f = Math.floor(game.anim * 9 + t.seed) % 3;
-    g.fillStyle = '#733e39'; g.fillRect(t.x - 2, t.y + 2, 4, 10);
-    g.fillStyle = '#1a1423'; g.fillRect(t.x - 4, t.y, 8, 3);
-    g.fillStyle = '#f77622'; g.fillRect(t.x - 4, t.y - 8 - f, 8, 8 + f);
-    g.fillStyle = '#fee761'; g.fillRect(t.x - 2, t.y - 5 - (f === 1 ? 2 : 0), 4, 5);
+    drawSprite(g, 'flame' + Math.floor(game.anim * 9 + t.seed) % 3, t.x, t.y - 4);
   }
 }
 
@@ -1886,7 +2089,7 @@ function punchLight(x, y, r, strength) {
 function drawLighting(g, cx, cy) {
   lctx.globalCompositeOperation = 'source-over';
   lctx.clearRect(0, 0, VIEW_W, VIEW_H);
-  lctx.fillStyle = 'rgba(4,3,10,0.93)';
+  lctx.fillStyle = `rgba(${theme().dark},0.93)`;
   lctx.fillRect(0, 0, VIEW_W, VIEW_H);
   lctx.globalCompositeOperation = 'destination-out';
   punchLight(player.x - cx, player.y - cy, LIGHT_RADIUS + Math.sin(game.anim * 3) * 5, 1);
@@ -1929,12 +2132,14 @@ function drawWorld(g) {
   const mer = dungeon.merchant;
   if (mer && dungeon.explored[idx(Math.floor(mer.x / TILE), Math.floor(mer.y / TILE))]) list.push({ y: mer.y, kind: 4, o: mer });
   for (const pr of props) if (dungeon.explored[idx(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))]) list.push({ y: pr.y, kind: 5, o: pr });
+  for (const pl of dungeon.pillars) if (dungeon.explored[idx(pl.tx, pl.ty)]) list.push({ y: pl.y, kind: 6, o: pl });
   list.push({ y: player.y, kind: 3, o: player });
   list.sort((a, b) => a.y - b.y);
   for (const d of list) {
     if (d.kind === 0) { drawShadow(g, d.o.x, d.o.y + 11, 15); drawSprite(g, d.o.opened ? 'chestOpen' : 'chest', d.o.x, d.o.y); }
     else if (d.kind === 1) drawItem(g, d.o);
     else if (d.kind === 2) drawEnemy(g, d.o);
+    else if (d.kind === 6) g.drawImage(pillarArt, d.o.tx * TILE, d.o.ty * TILE - 20);
     else if (d.kind === 5) { drawShadow(g, d.o.x, d.o.y + 10, 10); drawSprite(g, 'pot', d.o.x, d.o.y - 2); }
     else if (d.kind === 4) {
       drawShadow(g, d.o.x, d.o.y + 13, 12);
