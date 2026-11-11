@@ -115,6 +115,11 @@ const LIGHT_RADIUS = 340;             // px
 const PICKUP_RADIUS = 20, MAGNET_RADIUS = 85, WEAPON_REACH = 34;
 const CORNER_ASSIST = 7;               // px of wall corner you can slip around
 
+const DIFFICULTIES = [               // hp / dmg multiply every enemy's health and the damage you take
+  { name: 'Easy',   hp: 0.8, dmg: 0.7,  color: '#63c74d', blurb: 'Gentler monsters — great for a first run' },
+  { name: 'Normal', hp: 1.0, dmg: 1.0,  color: '#fee761', blurb: 'The intended challenge' },
+  { name: 'Hard',   hp: 1.3, dmg: 1.35, color: '#e43b44', blurb: 'Tougher, harder-hitting monsters' },
+];
 const FLOOR_HP_SCALE = 0.5, FLOOR_DMG_SCALE = 0.3, FLOOR_SPEED_SCALE = 0.05;
 const ENEMY_STATS = {
   slime:    { hp: 36,   speed: 78,  r: 12, dmg: 12, gold: [1, 3] },
@@ -382,7 +387,7 @@ let renderScale = 1;
 const urlSeed = new URLSearchParams(location.search).get('seed');
 const game = {
   state: 'title',                     // title | playing | paused | transition | dead | win
-  floor: 1, seed: 0, time: 0, anim: 0,
+  floor: 1, seed: 0, time: 0, anim: 0, difficulty: 1,
   shake: 0, hurtFlash: 0, endT: 0, winTimer: 0,
   transition: null, banner: null,
 };
@@ -401,8 +406,21 @@ const keys = {};
 const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, active: false };
 const touch = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, aimActive: false, mode: false };
 
-let best = { wins: 0, bestTime: 0, bestGold: 0 };
-try { best = Object.assign(best, JSON.parse(localStorage.getItem('emberdeep_best') || '{}')); } catch (err) { /* storage unavailable */ }
+let best = { wins: 0, bestGold: 0, times: [0, 0, 0], difficulty: 1 };   // times: fastest win per difficulty
+try {
+  const saved = JSON.parse(localStorage.getItem('emberdeep_best') || '{}');
+  if (saved.bestTime && !saved.times) saved.times = [0, saved.bestTime, 0];   // records from before difficulties existed
+  delete saved.bestTime;
+  best = Object.assign(best, saved);
+  if (!Array.isArray(best.times) || best.times.length !== DIFFICULTIES.length) best.times = [0, 0, 0];
+  if (!DIFFICULTIES[best.difficulty]) best.difficulty = 1;
+} catch (err) { /* storage unavailable */ }
+game.difficulty = best.difficulty;
+function setDifficulty(i) {
+  game.difficulty = best.difficulty = clamp(i, 0, DIFFICULTIES.length - 1);
+  saveBest();
+  sfx.clink();
+}
 function saveBest() { try { localStorage.setItem('emberdeep_best', JSON.stringify(best)); } catch (err) { /* ignore */ } }
 
 // ============================================================
@@ -948,7 +966,7 @@ class Player {
 
   hurt(dmg, fromX, fromY) {
     if (this.iframes > 0 || this.dashT > 0 || game.state !== 'playing' || game.winTimer > 0) return false;
-    dmg = Math.max(1, Math.round(dmg * this.armor));
+    dmg = Math.max(1, Math.round(dmg * this.armor * DIFFICULTIES[game.difficulty].dmg));
     this.hp -= dmg;
     this.iframes = PLAYER_IFRAMES;
     const a = Math.atan2(this.y - fromY, this.x - fromX);
@@ -980,7 +998,7 @@ function drinkPotion() {
 function createEnemy(type, x, y, floor, room) {
   const s = ENEMY_STATS[type];
   const scaled = type !== 'boss';
-  const hp = Math.round(s.hp * (scaled ? 1 + FLOOR_HP_SCALE * (floor - 1) : 1));
+  const hp = Math.round(s.hp * (scaled ? 1 + FLOOR_HP_SCALE * (floor - 1) : 1) * DIFFICULTIES[game.difficulty].hp);
   return {
     type, x, y, r: s.r, hp, maxHp: hp,
     speed: s.speed * (scaled ? 1 + FLOOR_SPEED_SCALE * (floor - 1) : 1),
@@ -1465,7 +1483,8 @@ function win() {
   game.state = 'win'; game.endT = 0;
   best.wins++;
   best.bestGold = Math.max(best.bestGold, player.gold);
-  if (!best.bestTime || game.time < best.bestTime) best.bestTime = game.time;
+  const d = game.difficulty;
+  if (!best.times[d] || game.time < best.times[d]) best.times[d] = game.time;
   saveBest();
 }
 
@@ -1894,7 +1913,7 @@ function drawMinimap(g) {
   const mer = dungeon.merchant;
   if (mer && dungeon.explored[idx(Math.floor(mer.x / TILE), Math.floor(mer.y / TILE))]) dot(mer.x, mer.y, '#63c74d', 5);
   if (Math.floor(game.anim * 4) % 2) dot(player.x, player.y, '#ffffff', 5); else dot(player.x, player.y, '#2ce8f5', 5);
-  text(g, (game.floor === FINAL_FLOOR ? 'Final Floor' : 'Floor ' + game.floor + '/' + FINAL_FLOOR), x + w, y + h + 16, 12, '#c8ccd4', 'right');
+  text(g, (game.floor === FINAL_FLOOR ? 'Final Floor' : 'Floor ' + game.floor + '/' + FINAL_FLOOR) + ' · ' + DIFFICULTIES[game.difficulty].name, x + w, y + h + 16, 12, '#c8ccd4', 'right');
   text(g, THEMES[game.floor - 1].name, x + w, y + h + 31, 11, '#8b90b4', 'right');
 }
 
@@ -2000,10 +2019,11 @@ function drawNumbers(g, cx, cy) {
 
 function controlLines() {
   return touch.mode
-    ? ['Left stick: move', 'Right stick: aim + attack', 'DASH: dodge roll', 'POTION: heal', 'USE: stairs + weapons']
-    : ['WASD / Arrows: move', 'Mouse: aim   Click: attack', 'Space: dash through danger', 'Q: drink potion', 'E: stairs + swap weapons', 'P: pause   M: mute'];
+    ? ['Left stick: move', 'Right stick: aim + attack', 'DASH: dodge roll', 'POTION: heal', 'USE: stairs, shop + weapons']
+    : ['WASD / Arrows: move', 'Mouse: aim   Click: attack', 'Space: dash through danger', 'Q: drink potion', 'E: stairs, shop + swap weapons', 'P: pause   M: mute'];
 }
 
+function difficultyButton(i) { return { x: VIEW_W / 2 - 187 + i * 128, y: 484, w: 118, h: 28 }; }
 const embers = [];
 function drawTitle(g) {
   const gr = g.createRadialGradient(VIEW_W / 2, 420, 40, VIEW_W / 2, 300, 560);
@@ -2039,11 +2059,22 @@ function drawTitle(g) {
   text(g, 'Ember King', 620, baseY + 46, 12, '#ff6644', 'center');
 
   text(g, 'Fight through 3 random floors, grab loot, and slay the Ember King.', VIEW_W / 2, 352, 14, '#c8ccd4', 'center');
-  controlLines().forEach((line, i) => text(g, line, VIEW_W / 2, 388 + i * 20, 13, '#8b90b4', 'center'));
+  controlLines().forEach((line, i) => text(g, line, VIEW_W / 2, 378 + i * 17, 12, '#8b90b4', 'center'));
+
+  // Difficulty picker
+  const diff = DIFFICULTIES[game.difficulty];
+  DIFFICULTIES.forEach((d, i) => {
+    const b = difficultyButton(i), on = i === game.difficulty;
+    g.fillStyle = on ? d.color : 'rgba(8,6,14,0.6)'; g.fillRect(b.x, b.y, b.w, b.h);
+    g.strokeStyle = d.color; g.lineWidth = 2; g.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+    g.font = `bold 14px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = on ? '#1a1423' : d.color; g.fillText((touch.mode ? '' : (i + 1) + ' ') + d.name, b.x + b.w / 2, b.y + b.h / 2 + 1);
+  });
+  text(g, diff.blurb, VIEW_W / 2, 524, 11, diff.color, 'center');
   if (Math.floor(game.anim * 2) % 2)
-    text(g, touch.mode ? 'TAP TO DESCEND' : 'CLICK OR PRESS ENTER TO DESCEND', VIEW_W / 2, 536, 20, '#ffffff', 'center');
+    text(g, touch.mode ? 'TAP TO DESCEND' : 'CLICK OR PRESS ENTER TO DESCEND', VIEW_W / 2, 550, 19, '#ffffff', 'center');
   if (best.wins || best.bestGold)
-    text(g, 'Wins: ' + best.wins + (best.bestTime ? '   Fastest: ' + formatTime(best.bestTime) : '') + '   Most gold: ' + best.bestGold, VIEW_W / 2, 572, 12, '#b86f50', 'center');
+    text(g, 'Wins: ' + best.wins + (best.times[game.difficulty] ? '   Fastest ' + diff.name + ' win: ' + formatTime(best.times[game.difficulty]) : '') + '   Most gold: ' + best.bestGold, VIEW_W / 2, 580, 12, '#b86f50', 'center');
 }
 
 function drawEndScreen(g, won) {
@@ -2057,12 +2088,13 @@ function drawEndScreen(g, won) {
   g.restore();
   text(g, won ? 'The Ember King has fallen. The deep is quiet again.' : 'Slain on ' + (game.floor === FINAL_FLOOR ? 'the final floor' : 'floor ' + game.floor) + ' — ' + THEMES[game.floor - 1].name,
     VIEW_W / 2, 232, 16, '#e8b796', 'center', TITLE_FONT);
-  const rows = [['Time', formatTime(game.time)], ['Monsters slain', String(player.kills)], ['Gold', String(player.gold)], ['Weapon', weaponLabel(player.weapon)]];
+  const rows = [['Difficulty', DIFFICULTIES[game.difficulty].name], ['Time', formatTime(game.time)], ['Monsters slain', String(player.kills)],
+    ['Gold', String(player.gold)], ['Weapon', weaponLabel(player.weapon)]];
   rows.forEach(([label, value], i) => {
-    text(g, label, VIEW_W / 2 - 16, 290 + i * 26, 15, '#8b90b4', 'right');
-    text(g, value, VIEW_W / 2 + 16, 290 + i * 26, 15, '#ffffff', 'left');
+    text(g, label, VIEW_W / 2 - 16, 278 + i * 26, 15, '#8b90b4', 'right');
+    text(g, value, VIEW_W / 2 + 16, 278 + i * 26, 15, '#ffffff', 'left');
   });
-  if (won && best.bestTime) text(g, 'Fastest win: ' + formatTime(best.bestTime), VIEW_W / 2, 408, 13, '#b86f50', 'center');
+  if (won && best.times[game.difficulty]) text(g, 'Fastest ' + DIFFICULTIES[game.difficulty].name + ' win: ' + formatTime(best.times[game.difficulty]), VIEW_W / 2, 420, 13, '#b86f50', 'center');
   if (game.endT > 0.9 && Math.floor(game.anim * 2) % 2)
     text(g, touch.mode ? 'TAP TO PLAY AGAIN' : 'CLICK OR PRESS ENTER TO PLAY AGAIN', VIEW_W / 2, 470, 18, '#ffffff', 'center');
   g.globalAlpha = 1;
@@ -2112,6 +2144,14 @@ canvas.addEventListener('pointerdown', ev => {
     mouse.active = true; mouse.down = true; touch.mode = false;
     setMouse(ev);
   } else touch.mode = true;
+  if (game.state === 'title') {                       // clicking a difficulty button picks it instead of starting
+    const rect = canvas.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * VIEW_W / rect.width, py = (ev.clientY - rect.top) * VIEW_H / rect.height;
+    for (let i = 0; i < DIFFICULTIES.length; i++) {
+      const b = difficultyButton(i);
+      if (px >= b.x && px <= b.x + b.w && py >= b.y - 4 && py <= b.y + b.h + 4) { setDifficulty(i); mouse.down = false; return; }
+    }
+  }
   primaryAction();
 });
 canvas.addEventListener('pointermove', ev => { if (ev.pointerType === 'mouse') { mouse.active = true; setMouse(ev); } });
@@ -2128,6 +2168,12 @@ window.addEventListener('keydown', ev => {
     case 'Enter': primaryAction(); break;
     case 'KeyR': if (game.state === 'dead' || game.state === 'win') primaryAction(); break;
     case 'Space': if (game.state === 'playing') player.tryDash(); else if (game.state === 'title') primaryAction(); break;
+    case 'Digit1': case 'Digit2': case 'Digit3':
+      if (game.state === 'title') setDifficulty(Number(ev.code.slice(5)) - 1);
+      break;
+    case 'ArrowLeft': case 'ArrowRight':
+      if (game.state === 'title') setDifficulty(game.difficulty + (ev.code === 'ArrowLeft' ? -1 : 1));
+      break;
     case 'KeyE': useInteract(); break;
     case 'KeyQ': drinkPotion(); break;
     case 'KeyP': case 'Escape': togglePause(); break;
