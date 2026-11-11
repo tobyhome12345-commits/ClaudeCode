@@ -96,7 +96,7 @@
 const VIEW_W = 800, VIEW_H = 600;
 const TILE = 32;
 const MAP_W = 56, MAP_H = 42;
-const PX = 3;                         // screen pixels per sprite pixel
+const PX = 2;                         // screen pixels per sprite pixel
 const TAU = Math.PI * 2;
 const FINAL_FLOOR = 3;
 const ARENA_W = 17, ARENA_H = 13;     // boss room size in tiles
@@ -195,55 +195,92 @@ const THEMES = [
 // PALETTE & SPRITES  (each char is one palette entry, '.' = transparent)
 // ============================================================
 const PALETTE = {
-  k: '#1a1423', w: '#f4f4f4', g: '#9aa5b1', G: '#5b6470', r: '#e43b44', R: '#a22633',
-  o: '#f77622', y: '#fee761', b: '#3a86ff', B: '#1d4ed8', n: '#63c74d', N: '#3e8948',
-  p: '#b55088', P: '#68386c', s: '#e8b796', t: '#b86f50', T: '#733e39', c: '#2ce8f5', m: '#ead4aa',
-  a: '#feae34',
+  k: '#181425', w: '#ffffff', W: '#c0cbdc', g: '#8b9bb4', G: '#5a6988', D: '#3a4466', d: '#262b44',
+  r: '#e43b44', R: '#a22633', q: '#f6757a', o: '#f77622', O: '#be4a2f', a: '#feae34', y: '#fee761',
+  b: '#3a86ff', B: '#1d4ed8', i: '#7cc0ff', c: '#2ce8f5', n: '#63c74d', N: '#3e8948', M: '#265c42', l: '#a8e65a',
+  p: '#b55088', P: '#68386c', v: '#3e2148', s: '#e8b796', S: '#c28569', t: '#b86f50', T: '#733e39', u: '#3e2731',
+  e: '#e4a672', m: '#ead4aa', E: '#b9a47c',
 };
 
+// `mirror: true` means the rows are the left half and get flipped to make the right half.
 const SPRITE_DATA = {
   player: { rows: [
-    '....kkkk....', '...kggggk...', '..kgwgggGk..', '..kkkkkkkk..', '..kGcGGcGk..', '..kggggggk..',
-    '.kkbbbbbbkk.', 'kgkbbyybbkgk', 'kgkbbbbbbkgk', '.kkBBBBBBkk.', '..kGGkkGGk..', '..kkk..kkk..' ] },
+    '...rr.kkkk......', '..rRRkWWggk.....', '..kRkWWggggk....', '...kkgggggGk....', '....kgkkkkkk....', '....kgdcddck....',
+    '....kggggGGk....', '...kkkGGGGkk....', '..kWgkbbbbkgk...', '..kggkbiybkGk...', '..kkkkbbbbkkk...', '....kBbbbbBk....',
+    '....kyyyyyyk....', '....kBBkkBBk....', '....kGGkkGGk....', '....kkkkkkkk....' ] },
+  playerWalk: { rows: [
+    '...rr.kkkk......', '..rRRkWWggk.....', '..kRkWWggggk....', '...kkgggggGk....', '....kgkkkkkk....', '....kgdcddck....',
+    '....kggggGGk....', '...kkkGGGGkk....', '..kWgkbbbbkgk...', '..kggkbiybkGk...', '..kkkkbbbbkkk...', '....kBbbbbBk....',
+    '....kyyyyyyk....', '....kBBkkBBk....', '...kGGk..kGGk...', '...kkkk..kkkk...' ] },
   slime: { rows: [
-    '....kkkk....', '..kknnnnkk..', '.knnwnnnnnk.', '.knwnnnnnnk.', 'knnnknnknnnk', 'knnnknnknnnk',
-    'knnnnnnnnnnk', 'kNnnnnnnnnNk', '.kNNNNNNNNk.', '..kkkkkkkk..' ] },
-  skeleton: { rows: [
-    '...kkkkkk...', '..kmmmmmmk..', '..kmkmmkmk..', '..kmrmmrmk..', '..kmmmmmmk..', '...kmkmkk...',
-    '..kkkmmkkk..', '.kmkmmmmkmk.', '.kmkmkkmkmk.', '.kk.kmmk.kk.', '...kmkkmk...', '...kkk.kkk..' ] },
-  batA: { rows: [
-    'kk..k..k..kk', 'kpk.kkkk.kpk', 'kppkppppkppk', 'kppprpprpppk', '.kPppppppPk.', '..kk.kk.kk..' ] },
-  batB: { rows: [
-    '....k..k....', '....kkkk....', '.kkkppppkkk.', 'kppprpprpppk', 'kpPkppppkPpk', 'kk..kkkk..kk' ] },
-  boss: { scale: 5, rows: [
-    'kk............kk', 'kRk..y.yy.y..kRk', 'kRRk.yyyyyy.kRRk', '.kRRkkkkkkkkRRk.', '..kkrrrrrrrrkk..',
-    '..krrrrrrrrrrk..', '.krrkkrrrrkkrrk.', '.krkyykrrkyykrk.', '.krkyokrrkoykrk.', '.krrkkrrrrkkrrk.',
-    '.krrrrrkkrrrrrk.', '..krrrrrrrrrrk..', '..kRkwkwwkwkRk..', '..kRRkwkkwkRRk..', '...kRRRRRRRRk...',
+    '.....kkkkkk.....', '...kklnnnnnkk...', '..klwlnnnnnnnk..', '.klwlnnnnnnnnnk.', '.klnnnnnnnnnnnk.', 'klnnnkwnnnkwnnNk',
+    'knnnnkknnnkknnNk', 'knnnnnnnnnnnnnNk', 'knnnnnkkkknnnNNk', 'kNnnnnnnnnnnnNNk', '.kNNnnnnnnnNNNk.', '..kkNNNNNNNNkk..',
     '....kkkkkkkk....' ] },
+  skeleton: { rows: [
+    '.....kkkkkk.....', '....kmmmmmmk....', '...kmmmmmmmEk...', '...kmkkmmkkEk...', '...kmkrmmkrEk...', '...kmmmkkmmEk...',
+    '....kmmmmmEk....', '....kmkmkmkk....', '.....kkEEkk.....', '...kkmkmmkmkk...', '..kmkkmEEmkkmk..', '..kEk.kmmk.kEk..',
+    '..kk..kEEk..kk..', '.....kmkkmk.....', '.....kmk.kmk....', '....kkkk.kkkk...' ] },
+  skeletonWalk: { rows: [
+    '.....kkkkkk.....', '....kmmmmmmk....', '...kmmmmmmmEk...', '...kmkkmmkkEk...', '...kmkrmmkrEk...', '...kmmmkkmmEk...',
+    '....kmmmmmEk....', '....kmkmkmkk....', '.....kkEEkk.....', '...kkmkmmkmkk...', '..kmkkmEEmkkmk..', '..kEk.kmmk.kEk..',
+    '..kk..kEEk..kk..', '.....kmkkmk.....', '....kmk...kmk...', '...kkkk...kkkk..' ] },
+  batA: { rows: [
+    'k..............k', 'kk...k....k...kk', 'kpk..kk..kk..kpk', 'kppk.kpkkpk.kppk', 'kpppkkppppkkpppk', 'kPpppprpprppppPk',
+    '.kPppppppppppPk.', '..kkPkpwppwkPkk.', '....k.kkkkk.k...' ] },
+  batB: { rows: [
+    '................', '.....k....k.....', '.....kk..kk.....', '.....kpkkpk.....', '.kkkkkppppkkkkk.', 'kppppprpprpppppk',
+    'kpPPppppppppPPpk', 'kk..kPwppwPk..kk', 'k....kkkkkk....k' ] },
   merchant: { rows: [
-    '....kkkk....', '...kppppk...', '..kppPPppk..', '..kpkkkkpk..', '..kpykkypk..', '..kpkkkkpk..',
-    '.kkppppppkk.', 'kpkpptyppkpk', 'kpkppppppkpk', '.kkPPPPPPkk.', '..kPPPPPPk..', '..kkkkkkkk..' ] },
-  flame0: { scale: 2, rows: ['..o...', '.oo...', '.oao..', 'oaayo.', 'oaywao', 'oaywao', '.oaao.', '..oo..'] },
-  flame1: { scale: 2, rows: ['...o..', '..oo..', '.oao..', '.oayo.', 'oaywao', 'oayyao', '.oaao.', '..oo..'] },
-  flame2: { scale: 2, rows: ['....o.', '..oo..', '..oao.', '.oyao.', 'oawyao', 'oayyao', '.oaao.', '..oo..'] },
+    '.....kkkkkk.....', '....kppppppk....', '...kppPPPPppk...', '...kpPvvvvPpk...', '...kpvyvvyvpk...', '...kpPvvvvPpk...',
+    '..kkppPPPPppkk..', '.kpkpppppppkkak.', '.kpkppptyppkkyk.', '.kkkppppppppkkk.', '...kppppppppk...', '...kPppppppPk...',
+    '..kPPppppppPPk..', '..kPPPPPPPPPPk..', '..kkkkkkkkkkkk..' ] },
+  boss: { scale: 4, mirror: true, rows: [
+    'k...........', 'kk.......y..', 'kRk......yy.', 'kRRk....kyay', 'kROk...kyyay', '.kROkkkkyaaa', '.kRROkkkkkkk', '..kRRkrrrrrr',
+    '..kkkrqrrrrr', '..krrqrrrrrr', '.krrrrrkkkrr', '.krrrrkyykkr', '.krrRkyaykrr', '.krrRRkkkrrr', '.krrRRrrrrrk', '..krRRrrrrkR',
+    '..krrRRRRrrr', '..kRrkkkkkkk', '..kRkwkwkwkw', '..kRkukukuku', '..kRRkwkwkwk', '...kRRkkkkkk', '....kRRRRRRR', '.....kkkkkkk' ] },
+  flame0: { rows: ['..o...', '.oo...', '.oao..', 'oaayo.', 'oaywao', 'oaywao', '.oaao.', '..oo..'] },
+  flame1: { rows: ['...o..', '..oo..', '.oao..', '.oayo.', 'oaywao', 'oayyao', '.oaao.', '..oo..'] },
+  flame2: { rows: ['....o.', '..oo..', '..oao.', '.oyao.', 'oawyao', 'oayyao', '.oaao.', '..oo..'] },
   chest: { rows: [
-    '.kkkkkkkkkk.', 'kttttttttttk', 'ktttttttttTk', 'kyyyykkyyyyk', 'kTTTkyykTTTk', 'kttttkkttttk',
-    'kttttttttTTk', 'kTTTTTTTTTTk', '.kkkkkkkkkk.' ] },
+    '..kkkkkkkkkkkk..', '.ktteeeeeeeettk.', 'kttttttttttttttk', 'kyTTTTTTTTTTTTyk', 'kyttttttttttttyk', 'kkkkkkkaakkkkkkk',
+    'kyttttkaaktttTyk', 'kyttttkyykttTTyk', 'kytttttkkttTTTyk', 'kyTTTTTTTTTTTTyk', 'kyyyyyyyyyyyyyyk', '.kkkkkkkkkkkkkk.' ] },
   chestOpen: { rows: [
-    '.kkkkkkkkkk.', 'kTTTTTTTTTTk', 'kTkkkkkkkkTk', 'kkkkkkkkkkkk', 'kkkkkkkkkkkk', 'ktttttttttTk',
-    'kttttttttTTk', 'kTTTTTTTTTTk', '.kkkkkkkkkk.' ] },
-  pot:    { rows: ['..kkkk..', '.kttttk.', '..kTTk..', '.kttttk.', 'kttwtttk', 'kttttTTk', '.kttTTk.', '..kkkk..'] },
-  coin:   { scale: 2, rows: ['.kkkk.', 'kyyyyk', 'kywyok', 'kyyyok', 'kyoook', '.kkkk.'] },
-  potion: { rows: ['...kk...', '..kttk..', '..kwwk..', '.kwrrrk.', 'krrrrrrk', 'krwrrrrk', 'krrrrRRk', '.kkkkkk.'] },
-  heart:  { rows: ['.kk..kk.', 'krrkkrrk', 'krwrrrrk', 'krrrrrrk', 'krrrrrRk', '.krrrRk.', '..krRk..', '...kk...'] },
-  boots:  { rows: ['.kkkk...', '.kttk...', '.kttk...', '.kttkkk.', '.kttttTk', '.kTTTTTk', '.kkkkkkk', '........'] },
-  shard:  { rows: ['...kk...', '..koyk..', '.koyyok.', '.koyook.', '.koooRk.', '..koRk..', '...kk...', '........'] },
-  charm:  { rows: ['....kkk.', '...kyyk.', '..kyyk..', '.kyyykk.', '.kkyyyk.', '..kyyk..', '.kyyk...', '.kkk....'] },
-  fang:   { rows: ['.kkkkkk.', '.kwwwwk.', '.kwwwwk.', '.kwwwgk.', '..kwgk..', '..kwrk..', '...kk...', '........'] },
-  shield: { rows: ['kkkkkkkk', 'kggbbggk', 'kggbbggk', 'kbbbbbbk', 'kggbbGGk', '.kgbbGk.', '..kbGk..', '...kk...'] },
-  sword:  { rows: ['......kk', '.....kwk', '....kwgk', 'k..kwgk.', 'kkkwgk..', '.kykk...', 'ktkkk...', 'kk......'] },
-  bow:    { rows: ['..kkkk..', '.kttk.w.', 'ktk...w.', 'kt....w.', 'kt....w.', 'ktk...w.', '.kttk.w.', '..kkkk..'] },
-  staff:  { rows: ['.....kk.', '....koyk', '....kook', '...ktkk.', '..ktk...', '.ktk....', 'ktk.....', 'kk......'] },
+    '..kkkkkkkkkkkk..', '.kTTTTTTTTTTTTk.', 'kyTttttttttttTyk', 'kyTTTTTTTTTTTTyk', 'kkkkkkkkkkkkkkkk', 'kyuuuuuuuuuuuuyk',
+    'kyuuayuuuuayuuyk', 'kkkkkkkkkkkkkkkk', 'kyttttttttttTTyk', 'kyTTTTTTTTTTTTyk', 'kyyyyyyyyyyyyyyk', '.kkkkkkkkkkkkkk.' ] },
+  pot: { rows: [
+    '....kkkk....', '...kTTTTk...', '...kteetk...', '....kTTk....', '..kkttttkk..', '.kteettttTk.', 'kteetttttTTk', 'ktetttttttTk',
+    'ktttttttTTTk', '.ktttttTTTk.', '..kTTTTTTk..', '...kkkkkk...' ] },
+  coin: { rows: ['..kkkk..', '.kyyyak.', 'kywyyaak', 'kyyyyaak', 'kyyyyaak', 'kyyyaaak', '.kaaaak.', '..kkkk..'] },
+  potion: { rows: [
+    '....kkkk....', '....ktek....', '....kWWk....', '...kkWWkk...', '..kWwrrrrk..', '.kWwrrrrrrk.', '.kwrrqrrrrk.', '.krrqrrrrRk.',
+    '.krrrrrrRRk.', '..krrrrRRk..', '...kkkkkk...' ] },
+  heart: { rows: [
+    '..kkk..kkk..', '.krrrkkrrrk.', 'krqqrrrrrrrk', 'krqwrrrrrrrk', 'krrrrrrrrrRk', 'krrrrrrrrRRk', '.krrrrrrrRk.', '..krrrrrRk..',
+    '...krrrRk...', '....krRk....', '.....kk.....' ] },
+  boots: { rows: [
+    '....kkkk....', '....ktek....', '.kk.kttk....', 'kwwkkttk....', 'kwwwkttk....', '.kwkkttkk...', '..k.kttttkk.', '....ktttttek',
+    '....ktttttTk', '....kTTTTTTk', '....kkkkkkkk' ] },
+  shard: { rows: [
+    '.....kk.....', '....kyak....', '...kyaaok...', '..kyyaaook..', '..kyaaaook..', '.kyyaaoooOk.', '.kyaaaoooOk.', '..kaaooOOk..',
+    '..kaoooOOk..', '...kooOOk...', '....koOk....', '.....kk.....' ] },
+  charm: { rows: [
+    '......kkkk..', '.....kyyak..', '....kyyak...', '...kyyak....', '..kyyyakkk..', '..kyyyyyak..', '...kkkyyak..', '.....kyak...',
+    '....kyak....', '...kyak.....', '...kak......', '...kk.......' ] },
+  fang: { rows: [
+    '..kkkkkkkk..', '.kwwwwwwWWk.', '.kwwwwwwWWk.', '.kwwwwwWWWk.', '..kwwwwWWk..', '..kwwwwWWk..', '...kwwWWk...', '...kwwWrk...',
+    '....kwrk....', '....krRk....', '.....kk.....' ] },
+  shield: { rows: [
+    '.kkkkkkkkkk.', 'kWWgggggggGk', 'kWgbbyybbgGk', 'kggbbyybbgGk', 'kgyyyyyyyyGk', 'kggbbyybbGGk', 'kggbbyybbGGk', '.kgbbyybbGk.',
+    '.kggbyybGGk.', '..kggyyGGk..', '...kkGGkk...', '.....kk.....' ] },
+  sword: { rows: [
+    '.........kkk', '........kwWk', '.......kwWgk', '......kwWgk.', '.....kwWgk..', '....kwWgk...', '.kk.kWgk....', '.kakkgk.....',
+    '..kaak......', '.kTkaak.....', 'kTk.kk......', 'kk..........' ] },
+  bow: { rows: [
+    '..kkkk......', '..kwtTkk....', '..kw.kTtk...', '..kw..kTtk..', '..kw...kTk..', '..kw...kTtk.', '..kw...kTtk.', '..kw...kTk..',
+    '..kw..kTtk..', '..kw.kTtk...', '..kwtTkk....', '..kkkk......' ] },
+  staff: { rows: [
+    '.......kkk..', '......kayok.', '.....kayyaok', '.....koyaook', '......kooOk.', '.....ktkkk..', '....kTtk....', '...kTtk.....',
+    '..kTtk......', '.kTtk.......', 'kTtk........', 'kkk.........' ] },
 };
 
 const STAIN_COLORS = {                 // what each monster leaves on the floor
@@ -271,8 +308,9 @@ function buildSprite(rows, scale, flash) {
 }
 const SPR = {}, SPR_FLASH = {};
 for (const [name, def] of Object.entries(SPRITE_DATA)) {
-  SPR[name] = buildSprite(def.rows, def.scale || PX, false);
-  SPR_FLASH[name] = buildSprite(def.rows, def.scale || PX, true);
+  const rows = def.mirror ? def.rows.map(row => row + [...row].reverse().join('')) : def.rows;
+  SPR[name] = buildSprite(rows, def.scale || PX, false);
+  SPR_FLASH[name] = buildSprite(rows, def.scale || PX, true);
 }
 
 // Draws a pre-rendered sprite centred on (x, y).
@@ -1961,7 +1999,7 @@ function drawPlayer(g) {
   const behind = Math.sin(p.aim) < -0.3;
   g.globalAlpha = blink ? 0.4 : 1;
   if (behind) drawHeldWeapon(g, p);
-  drawSprite(g, 'player', p.x, p.y - 6 - bob, p.facing, false, p.dashT > 0 ? 1.15 : 1, p.dashT > 0 ? 0.9 : 1);
+  drawSprite(g, p.moving && Math.floor(p.walk / 1.7) % 2 ? 'playerWalk' : 'player', p.x, p.y - 6 - bob, p.facing, false, p.dashT > 0 ? 1.15 : 1, p.dashT > 0 ? 0.9 : 1);
   if (!behind) drawHeldWeapon(g, p);
   g.globalAlpha = 1;
 }
@@ -1990,7 +2028,7 @@ function drawEnemy(g, e) {
       break;
     case 'skeleton': {
       drawShadow(g, e.x, e.y + 13, 10);
-      drawSprite(g, 'skeleton', e.x, e.y - 5 * es, e.facing, flash, es, es);
+      drawSprite(g, e.awake && e.state === 'move' && Math.floor(e.anim * 6) % 2 ? 'skeletonWalk' : 'skeleton', e.x, e.y - 5 * es, e.facing, flash, es, es);
       g.save();
       g.translate(Math.round(e.x), Math.round(e.y)); g.rotate(e.aim);
       g.strokeStyle = '#1a1423'; g.lineWidth = 4; g.beginPath(); g.arc(6, 0, 11, -1.1, 1.1); g.stroke();
@@ -1999,7 +2037,7 @@ function drawEnemy(g, e) {
       break;
     }
     case 'boss': {
-      drawShadow(g, e.x, e.y + 34, 34);
+      drawShadow(g, e.x, e.y + 34, 38);
       let ox = 0, oy = 0;
       if (e.state === 'ringTell' || e.state === 'chargeTell' || e.state === 'slamTell' || e.state === 'roar' || e.state === 'dying') {
         ox = (Math.random() - 0.5) * 5; oy = (Math.random() - 0.5) * 5;
@@ -2009,7 +2047,7 @@ function drawEnemy(g, e) {
         g.beginPath(); g.arc(e.x, e.y - 4, 52, 0, TAU); g.fill();
       }
       const dim = e.state === 'stun';
-      drawSprite(g, 'boss', e.x + ox, e.y - 6 + oy + Math.sin(e.anim * 2.5) * 3, 1,
+      drawSprite(g, 'boss', e.x + ox, e.y - 14 + oy + Math.sin(e.anim * 2.5) * 3, 1,
         flash || (e.state === 'dying' && Math.floor(game.anim * 16) % 2 === 0), 1, dim ? 0.92 : 1);
       if (dim) {                                       // dizzy stars
         for (let k = 0; k < 3; k++) {
@@ -2350,11 +2388,11 @@ function drawTitle(g) {
   // The cast
   const baseY = 268, bob = k => Math.sin(game.anim * 3 + k) * 3;
   g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(120, baseY + 26, 560, 6);
-  drawSprite(g, 'player', 190, baseY + bob(0), 1, false, 1.4, 1.4);
-  drawSprite(g, 'slime', 320, baseY + 6 + bob(1), -1, false, 1.3, 1.3);
+  drawSprite(g, 'player', 190, baseY + bob(0), 1, false, 2, 2);
+  drawSprite(g, 'slime', 320, baseY + 4 + bob(1), -1, false, 2, 2);
   drawSprite(g, Math.floor(game.anim * 8) % 2 ? 'batA' : 'batB', 420, baseY - 14 + bob(2) * 2, -1, false, 1.3, 1.3);
-  drawSprite(g, 'skeleton', 510, baseY + bob(3), -1, false, 1.3, 1.3);
-  drawSprite(g, 'boss', 620, baseY - 18 + bob(4), 1, false, 0.9, 0.9);
+  drawSprite(g, 'skeleton', 510, baseY + bob(3), -1, false, 2, 2);
+  drawSprite(g, 'boss', 628, baseY - 20 + bob(4), 1, false, 1, 1);
   text(g, 'You', 190, baseY + 46, 12, '#2ce8f5', 'center');
   text(g, 'Slime', 320, baseY + 46, 12, '#63c74d', 'center');
   text(g, 'Bat', 420, baseY + 46, 12, '#b55088', 'center');
