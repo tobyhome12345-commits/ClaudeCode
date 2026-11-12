@@ -2327,6 +2327,23 @@ function text(g, str, x, y, size, color, align = 'left', font = FONT) {
   g.fillStyle = 'rgba(0,0,0,0.8)'; g.fillText(str, x + 1, y + 2);
   g.fillStyle = color; g.fillText(str, x, y);
 }
+// Framed HUD box: dark glass with a two-tone pixel border in the floor's colours.
+function panel(g, x, y, w, h) {
+  g.fillStyle = 'rgba(10,8,18,0.8)'; g.fillRect(x, y, w, h);
+  g.fillStyle = '#181425';
+  g.fillRect(x, y, w, 2); g.fillRect(x, y + h - 2, w, 2); g.fillRect(x, y, 2, h); g.fillRect(x + w - 2, y, 2, h);
+  g.fillStyle = theme().rim;
+  g.fillRect(x + 2, y + 2, w - 4, 1); g.fillRect(x + 2, y + h - 3, w - 4, 1); g.fillRect(x + 2, y + 2, 1, h - 4); g.fillRect(x + w - 3, y + 2, 1, h - 4);
+  g.fillStyle = theme().brickLight;
+  for (const [cx, cy] of [[x + 2, y + 2], [x + w - 4, y + 2], [x + 2, y + h - 4], [x + w - 4, y + h - 4]]) g.fillRect(cx, cy, 2, 2);
+}
+// Centred text on a dark strip so it stays readable over bright floors.
+function label(g, str, x, y, size, color) {
+  g.font = `bold ${size}px ${FONT}`;
+  const w = g.measureText(str).width;
+  g.fillStyle = 'rgba(10,8,18,0.62)'; g.fillRect(x - w / 2 - 8, y - size * 0.8, w + 16, size * 1.6);
+  text(g, str, x, y, size, color, 'center');
+}
 function icon(g, name, x, y, size) {            // sprite scaled to fit a size×size box centred on (x, y)
   const img = SPR[name], s = size / Math.max(img.width, img.height);
   g.drawImage(img, x - img.width * s / 2, y - img.height * s / 2, img.width * s, img.height * s);
@@ -2344,8 +2361,7 @@ function drawMinimap(g) {
     }
   }
   const s = 1.5, w = minimap.width * s, h = minimap.height * s, x = VIEW_W - w - 12, y = 12;
-  g.fillStyle = 'rgba(8,6,14,0.72)'; g.fillRect(x - 3, y - 3, w + 6, h + 6);
-  g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 1; g.strokeRect(x - 2.5, y - 2.5, w + 5, h + 5);
+  panel(g, x - 5, y - 5, w + 10, h + 10);
   g.drawImage(minimap, x, y, w, h);
   const dot = (wx, wy, col, size) => { g.fillStyle = col; g.fillRect(x + wx / TILE * 2 * s - size / 2, y + wy / TILE * 2 * s - size / 2, size, size); };
   for (const c of chests) if (!c.opened && dungeon.explored[idx(Math.floor(c.x / TILE), Math.floor(c.y / TILE))]) dot(c.x, c.y, '#f77622', 4);
@@ -2359,14 +2375,21 @@ function drawMinimap(g) {
 
 function drawHUD(g) {
   const p = player, x = 14, y = 46, w = 190;
-  g.fillStyle = 'rgba(8,6,14,0.72)'; g.fillRect(x - 6, y - 6, w + 12, 94);
+  panel(g, x - 8, y - 8, w + 16, 98);
   // Health
-  g.fillStyle = '#2a1418'; g.fillRect(x, y, w, 18);
-  g.fillStyle = '#f4f4f4'; g.fillRect(x, y, w * clamp(p.hpLag / p.maxHp, 0, 1), 18);
-  g.fillStyle = p.hp / p.maxHp < 0.3 && Math.floor(game.anim * 6) % 2 ? '#ff7b84' : '#e43b44';
-  g.fillRect(x, y, w * clamp(p.hp / p.maxHp, 0, 1), 18);
-  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(x, y, w * clamp(p.hp / p.maxHp, 0, 1), 5);
-  text(g, Math.ceil(p.hp) + ' / ' + p.maxHp, x + w / 2, y + 10, 12, '#ffffff', 'center');
+  const hx = x + 22, hw = w - 22, frac = clamp(p.hp / p.maxHp, 0, 1);
+  g.fillStyle = '#181425'; g.fillRect(hx - 2, y - 2, hw + 4, 22);
+  g.fillStyle = '#2a1418'; g.fillRect(hx, y, hw, 18);
+  g.fillStyle = '#f4f4f4'; g.fillRect(hx, y, hw * clamp(p.hpLag / p.maxHp, 0, 1), 18);
+  g.fillStyle = frac < LOW_HP_WARNING && Math.floor(game.anim * 6) % 2 ? '#ff7b84' : '#e43b44';
+  g.fillRect(hx, y, hw * frac, 18);
+  g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(hx, y, hw * frac, 5);
+  g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(hx, y + 13, hw * frac, 5);
+  g.fillStyle = 'rgba(0,0,0,0.4)';
+  for (let hp = 25; hp < p.maxHp; hp += 25) g.fillRect(hx + Math.round(hw * hp / p.maxHp), y, 1, 18);   // a notch every 25 HP
+  const beat = frac < LOW_HP_WARNING ? 1 + 0.12 * Math.abs(Math.sin(game.anim * 6)) : 1;
+  icon(g, 'heart', x + 8, y + 9, 22 * beat);
+  text(g, Math.ceil(p.hp) + ' / ' + p.maxHp, hx + hw / 2, y + 10, 12, '#ffffff', 'center');
   // Dash
   g.fillStyle = '#16222c'; g.fillRect(x, y + 21, w, 4);
   g.fillStyle = p.dashCd > 0 ? '#2a7f8a' : '#2ce8f5'; g.fillRect(x, y + 21, w * (1 - p.dashCd / DASH_COOLDOWN), 4);
@@ -2385,9 +2408,9 @@ function drawHUD(g) {
   for (const key of RELIC_KEYS) {
     const n = p.relics[key];
     if (!n) continue;
-    g.fillStyle = 'rgba(8,6,14,0.72)'; g.fillRect(rx - 12, y + 92, 28, 24);
-    icon(g, key, rx, y + 104, 18);
-    if (n > 1) text(g, String(n), rx + 12, y + 110, 10, '#ffffff', 'center');
+    panel(g, rx - 14, y + 94, 28, 28);
+    icon(g, key, rx, y + 108, 18);
+    if (n > 1) text(g, String(n), rx + 9, y + 116, 10, '#ffffff', 'center');
     rx += 30;
   }
 
@@ -2397,11 +2420,12 @@ function drawHUD(g) {
   const boss = enemies.find(e => e.type === 'boss' && e.awake);
   if (boss) {
     const bw = 400, bx = (VIEW_W - bw) / 2, by = VIEW_H - 34;
-    text(g, BOSS_NAME, VIEW_W / 2, by - 12, 13, '#ff8866', 'center');
-    g.fillStyle = 'rgba(8,6,14,0.8)'; g.fillRect(bx - 3, by - 3, bw + 6, 16);
+    label(g, BOSS_NAME, VIEW_W / 2, by - 15, 13, '#ff8866');
+    panel(g, bx - 5, by - 5, bw + 10, 20);
     g.fillStyle = '#3a1418'; g.fillRect(bx, by, bw, 10);
     g.fillStyle = boss.phase2 ? '#f77622' : '#e43b44'; g.fillRect(bx, by, bw * boss.hp / boss.maxHp, 10);
-    g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(bx + bw / 2 - 1, by, 2, 10);
+    g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(bx, by, bw * boss.hp / boss.maxHp, 3);
+    g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillRect(bx + bw / 2 - 1, by - 1, 2, 12);
   }
 
   // Use prompt
@@ -2409,22 +2433,22 @@ function drawHUD(g) {
   const promptY = boss ? VIEW_H - 78 : VIEW_H - 50;
   if (interact && game.state === 'playing') {
     const it = interact.item;
-    if (interact.type === 'stairs') text(g, useKey + ' Descend deeper', VIEW_W / 2, promptY, 15, '#fee761', 'center');
+    if (interact.type === 'stairs') label(g, useKey + ' Descend deeper', VIEW_W / 2, promptY, 15, '#fee761');
     else if (it.kind === 'weapon') {
       const wpn = it.weapon, verb = it.price ? ' Buy ' : ' Take ', cost = it.price ? '  —  ' + it.price + ' gold' : '';
-      text(g, useKey + verb + weaponLabel(wpn) + cost, VIEW_W / 2, promptY - 9, 15, it.price > p.gold ? '#ff8888' : RARITIES[wpn.rarity].color, 'center');
-      text(g, 'DMG ' + Math.round(weaponDamage(wpn) * p.dmgMul) + '   (yours: ' + Math.round(weaponDamage(p.weapon) * p.dmgMul) + ')', VIEW_W / 2, promptY + 9, 12, '#c8ccd4', 'center');
+      label(g, useKey + verb + weaponLabel(wpn) + cost, VIEW_W / 2, promptY - 9, 15, it.price > p.gold ? '#ff8888' : RARITIES[wpn.rarity].color);
+      label(g, 'DMG ' + Math.round(weaponDamage(wpn) * p.dmgMul) + '   (yours: ' + Math.round(weaponDamage(p.weapon) * p.dmgMul) + ')', VIEW_W / 2, promptY + 9, 12, '#c8ccd4');
     } else {
       const name = it.kind === 'potion' ? 'Health Potion' : RELICS[it.relic].name;
       const desc = it.kind === 'potion' ? 'Heals ' + POTION_HEAL + ' HP when you drink it' : RELICS[it.relic].desc;
-      text(g, useKey + ' Buy ' + name + '  —  ' + it.price + ' gold', VIEW_W / 2, promptY - 9, 15, it.price > p.gold ? '#ff8888' : '#fee761', 'center');
-      text(g, desc, VIEW_W / 2, promptY + 9, 12, '#c8ccd4', 'center');
+      label(g, useKey + ' Buy ' + name + '  —  ' + it.price + ' gold', VIEW_W / 2, promptY - 9, 15, it.price > p.gold ? '#ff8888' : '#fee761');
+      label(g, desc, VIEW_W / 2, promptY + 9, 12, '#c8ccd4');
     }
   }
   // Toasts
   toasts.forEach((t, i) => {
     g.globalAlpha = clamp(t.life, 0, 1);
-    text(g, t.text, VIEW_W / 2, promptY - 34 - (toasts.length - 1 - i) * 20, 13, t.color, 'center');
+    label(g, t.text, VIEW_W / 2, promptY - 34 - (toasts.length - 1 - i) * 20, 13, t.color);
   });
   g.globalAlpha = 1;
   // Floor banner
@@ -2489,7 +2513,7 @@ function drawTitle(g) {
   g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(120, baseY + 26, 560, 6);
   drawSprite(g, 'player', 190, baseY + bob(0), 1, false, 2, 2);
   drawSprite(g, 'slime', 320, baseY + 4 + bob(1), -1, false, 2, 2);
-  drawSprite(g, Math.floor(game.anim * 8) % 2 ? 'batA' : 'batB', 420, baseY - 14 + bob(2) * 2, -1, false, 1.3, 1.3);
+  drawSprite(g, Math.floor(game.anim * 8) % 2 ? 'batA' : 'batB', 420, baseY - 14 + bob(2) * 2, -1, false, 2, 2);
   drawSprite(g, 'skeleton', 510, baseY + bob(3), -1, false, 2, 2);
   drawSprite(g, 'boss', 628, baseY - 20 + bob(4), 1, false, 1, 1);
   text(g, 'You', 190, baseY + 46, 12, '#2ce8f5', 'center');
