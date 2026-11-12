@@ -110,6 +110,8 @@ const PLAYER_IFRAMES = 0.7;           // seconds of mercy after a hit
 const DASH_SPEED = 520, DASH_TIME = 0.16, DASH_COOLDOWN = 0.9;
 const SWING_TIME = 0.14;
 const HITSTOP_KILL = 0.035, HITSTOP_HURT = 0.07, HITSTOP_BOSS = 0.18;   // tiny freeze so hits land with a thump
+const DARKNESS = 0.9;                 // how black unlit areas are (0 = no darkness, 1 = pitch black)
+const MOTE_COUNT = 44;                // drifting dust / spores / embers in the air
 const LOW_HP_WARNING = 0.3;           // fraction of max HP where the screen edge pulses red
 const POTION_HEAL = 40, POTION_MAX = 3;
 const FOV_RADIUS = 7;                 // tiles
@@ -163,9 +165,9 @@ const WEAPONS = {
 };
 const WEAPON_KEYS = Object.keys(WEAPONS);
 const RARITIES = [
-  { name: 'Common', mult: 1.0,  color: '#c8ccd4' },
-  { name: 'Rare',   mult: 1.35, color: '#4da6ff' },
-  { name: 'Epic',   mult: 1.75, color: '#c77dff' },
+  { name: 'Common', mult: 1.0,  color: '#c8ccd4', rgb: '200,204,212' },
+  { name: 'Rare',   mult: 1.35, color: '#4da6ff', rgb: '77,166,255' },
+  { name: 'Epic',   mult: 1.75, color: '#c77dff', rgb: '199,125,255' },
 ];
 const RARITY_ODDS = [[0.70, 0.26, 0.04], [0.45, 0.43, 0.12], [0.25, 0.50, 0.25]];   // per floor
 
@@ -182,13 +184,13 @@ const RELIC_KEYS = Object.keys(RELICS);
 const THEMES = [
   { name: 'The Forgotten Crypt', floor: '#2c2f45', line: '#1b1d2f', wallTop: '#1f2135', rim: '#4d5378',
     brick: '#4d5275', brickDark: '#3a3e5c', brickLight: '#6a709c', mortar: '#222439',
-    banner: '#3a86ff', emblem: '#c0cbdc', dark: '5,5,14', glow: '120,140,255' },
+    banner: '#3a86ff', emblem: '#c0cbdc', dark: '5,5,14', mote: '190,205,255', moteVy: 5 },
   { name: 'The Mossy Halls',     floor: '#2a3830', line: '#18231d', wallTop: '#18231c', rim: '#44624e',
     brick: '#4a6350', brickDark: '#394d3e', brickLight: '#699071', mortar: '#1c2921',
-    banner: '#3e8948', emblem: '#fee761', dark: '3,9,6', glow: '120,255,160' },
+    banner: '#3e8948', emblem: '#fee761', dark: '3,9,6', mote: '170,255,160', moteVy: -3 },
   { name: 'The Ember Throne',    floor: '#3c2828', line: '#261718', wallTop: '#261617', rim: '#74403a',
     brick: '#6e3d38', brickDark: '#562e2b', brickLight: '#9a5b4e', mortar: '#291516',
-    banner: '#a22633', emblem: '#feae34', dark: '12,3,3', glow: '255,140,90' },
+    banner: '#a22633', emblem: '#feae34', dark: '12,3,3', mote: '255,160,60', moteVy: -26 },
 ];
 
 // ============================================================
@@ -300,7 +302,7 @@ function buildSprite(rows, scale, flash) {
   rows.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
       if (row[x] === '.') continue;
-      g.fillStyle = flash ? '#ffffff' : PALETTE[row[x]];
+      g.fillStyle = flash ? (flash === true ? '#ffffff' : flash) : PALETTE[row[x]];
       g.fillRect(x * scale, y * scale, scale, scale);
     }
   });
@@ -312,6 +314,8 @@ for (const [name, def] of Object.entries(SPRITE_DATA)) {
   SPR[name] = buildSprite(rows, def.scale || PX, false);
   SPR_FLASH[name] = buildSprite(rows, def.scale || PX, true);
 }
+
+const SPR_DASH = buildSprite(SPRITE_DATA.player.rows, PX, '#2ce8f5');   // cyan afterimage left by a dash
 
 // Draws a pre-rendered sprite centred on (x, y).
 function drawSprite(g, name, x, y, flip = 1, flash = false, sx = 1, sy = 1) {
@@ -450,6 +454,7 @@ const game = {
 let dungeon = null;                   // { tiles, explored, rooms, start, exitRoom, bossRoom, torches, gates }
 let flow = new Int16Array(MAP_W * MAP_H);   // BFS distance to the player, for enemy pathing
 let player = null;
+let ghosts = [], flashes = [];         // fading silhouettes and bursts of light
 let enemies = [], bullets = [], items = [], chests = [], props = [], particles = [], numbers = [], slashes = [], toasts = [];
 let spawnQueue = [];
 let interact = null;                  // what the Use key would do right now
@@ -672,6 +677,7 @@ function stockShop(room, floor) {
 }
 
 function populateFloor(floor) {
+  ghosts = []; flashes = [];
   enemies = []; bullets = []; items = []; chests = []; props = []; particles = []; numbers = []; slashes = []; spawnQueue = [];
   const combatRooms = shuffle(dungeon.rooms.filter(r => r.kind === 'normal'));
   const isBossFloor = floor === FINAL_FLOOR;
@@ -1145,6 +1151,8 @@ function toast(text, color = '#ffffff') {
   toasts.push({ text, color, life: 3.2 });
   if (toasts.length > 4) toasts.shift();
 }
+function flash(x, y, r, rgb, life = 0.25) { flashes.push({ x, y, r, rgb, life, max: life }); }
+function ghost(name, x, y, flip, life, grow, dash) { ghosts.push({ name, x, y, flip, life, max: life, grow, dash }); }
 function shake(amount) { game.shake = Math.max(game.shake, amount); }
 function hitstop(seconds) { game.hitstop = Math.max(game.hitstop, seconds); }
 
@@ -1164,7 +1172,7 @@ class Player {
     this.attackCd = 0; this.dashCd = 0; this.dashT = 0; this.dashDx = 0; this.dashDy = 0;
     this.iframes = 0; this.aim = 0; this.facing = 1;
     this.swingT = 0; this.swingDir = 1; this.walk = 0; this.moving = false;
-    this.moveX = 0; this.moveY = 0; this.kx = 0; this.ky = 0;
+    this.moveX = 0; this.moveY = 0; this.kx = 0; this.ky = 0; this.dustT = 0;
   }
   get speed()  { return PLAYER_SPEED * (1 + 0.12 * (this.relics.boots || 0)); }
   get dmgMul() { return 1 + 0.18 * (this.relics.shard || 0); }
@@ -1189,11 +1197,15 @@ class Player {
     if (this.dashT > 0) {
       this.dashT -= dt;
       moveEntity(this, this.dashDx * DASH_SPEED * dt, this.dashDy * DASH_SPEED * dt);
-      particles.push({ x: this.x, y: this.y, vx: 0, vy: 0, life: 0.25, max: 0.25, color: '#2ce8f5', size: 5 });
+      ghost('player', this.x, this.y - 6, this.facing, 0.22, 0, true);
       for (const pr of props) if (!pr.dead && dist(this.x, this.y, pr.x, pr.y) < this.r + POT_RADIUS + 2) breakPot(pr);
     } else if (this.moving) {
       moveEntity(this, mx * this.speed * dt, my * this.speed * dt);
       this.walk += dt * 11;
+      if ((this.dustT -= dt) <= 0) {                  // little puffs of dust at your heels
+        this.dustT = 0.19;
+        particles.push({ x: this.x - mx * 6, y: this.y + 11, vx: -mx * 18 + (Math.random() - 0.5) * 14, vy: -10, life: 0.34, max: 0.34, color: '#8b9bb4', size: 3 });
+      }
     }
     if (this.kx || this.ky) {
       moveEntity(this, this.kx * dt, this.ky * dt);
@@ -1280,6 +1292,7 @@ class Player {
     const a = Math.atan2(this.y - fromY, this.x - fromX);
     this.kx = Math.cos(a) * 260; this.ky = Math.sin(a) * 260;
     shake(8); game.hurtFlash = 0.35; hitstop(HITSTOP_HURT);
+    flash(this.x, this.y, 70, '255,70,80');
     sfx.hurt();
     addNumber(this.x, this.y - 22, '-' + dmg, '#ff5566');
     burst(this.x, this.y, ['#e43b44', '#a22633'], 8, 130, 0.4, 3);
@@ -1298,6 +1311,7 @@ function drinkPotion() {
   player.hp += healed;
   addNumber(player.x, player.y - 22, '+' + Math.round(healed), '#63c74d');
   burst(player.x, player.y, ['#63c74d', '#f4f4f4'], 12, 90, 0.6, 3);
+  flash(player.x, player.y, 90, '110,255,120', 0.4);
   sfx.potion();
 }
 
@@ -1345,6 +1359,9 @@ function killEnemy(e) {
   sfx.kill();
   hitstop(HITSTOP_KILL);
   splat(e.x, e.y + 6, STAIN_COLORS[e.type], e.type === 'mini' ? 8 : 18, e.r + 8);
+  const body = e.type === 'mini' ? 'slime' : e.type === 'bat' ? 'batA' : e.type;
+  ghost(body, e.x, e.y - 5, e.facing, 0.2, 0.7);       // white silhouette that pops as it dies
+  flash(e.x, e.y, 60, '255,255,255', 0.15);
   const g = ENEMY_STATS[e.type].gold;
   for (let i = randInt(g[0], g[1]); i > 0; i--) dropItem('gold', e.x, e.y, { value: 1 });
   if (e.type !== 'mini' && chance(POTION_DROP_CHANCE)) dropItem('potion', e.x, e.y);
@@ -1509,6 +1526,7 @@ function updateBoss(e, dt) {
     case 'slamTell':
       if (e.timer <= 0) {
         shake(12); sfx.slam();
+        flash(e.x, e.y, 190, '255,80,60', 0.3);
         slashes.push({ x: e.x, y: e.y, ang: 0, arc: TAU, range: BOSS_SLAM_RADIUS, life: 0.22, color: '#e43b44', ring: true });
         burst(e.x, e.y + 20, ['#e43b44', '#f77622', '#5b6470'], 26, 260, 0.5, 4);
         if (d < BOSS_SLAM_RADIUS + player.r - 4) player.hurt(BOSS_SLAM_DMG, e.x, e.y);
@@ -1574,6 +1592,7 @@ function finishBoss(e) {
   player.kills++;
   burst(e.x, e.y, DEATH_COLORS.boss, 60, 320, 1.1, 5);
   splat(e.x, e.y + 10, STAIN_COLORS.boss, 160, 70);
+  flash(e.x, e.y, 380, '255,210,150', 0.9);
   shake(16); sfx.boom(); sfx.win(); hitstop(HITSTOP_BOSS);
   for (let i = 0; i < ENEMY_STATS.boss.gold[0]; i++) dropItem('gold', e.x, e.y, { value: 2 });
   for (const i of dungeon.gates) { dungeon.tiles[i] = T_FLOOR; repaintTile(i % MAP_W, (i / MAP_W) | 0); }
@@ -1641,6 +1660,7 @@ function explodeOrb(b) {
   burst(b.x, b.y, ['#f77622', '#fee761', '#e43b44'], 16, 170, 0.45, 4);
   slashes.push({ x: b.x, y: b.y, ang: 0, arc: TAU, range: b.aoe, life: 0.18, color: '#f77622', ring: true });
   sfx.boom(); shake(2);
+  flash(b.x, b.y, 110, '255,150,50', 0.3);
   for (const pr of props) if (!pr.dead && dist(b.x, b.y, pr.x, pr.y) < b.aoe + POT_RADIUS) breakPot(pr);
   for (const e of enemies) {
     if (e.dead || dist(b.x, b.y, e.x, e.y) > b.aoe + e.r) continue;
@@ -1704,6 +1724,7 @@ function openChest(c) {
   c.opened = true;
   sfx.chest();
   burst(c.x, c.y - 6, ['#fee761', '#f77622', '#f4f4f4'], 18, 150, 0.6, 3);
+  flash(c.x, c.y - 4, 130, '255,220,110', 0.5);
   for (let i = randInt(5, 9); i > 0; i--) dropItem('gold', c.x, c.y, { value: randInt(1, 3) });
   if (c.potion) dropItem('potion', c.x, c.y);
   const kind = c.loot === 'any' ? (chance(0.55) ? 'weapon' : 'relic') : c.loot;
@@ -1724,6 +1745,7 @@ function collectItem(it) {
       if (it.relic === 'heart') { player.maxHp += 25; player.hp += 25; }
       sfx.pickup(); toast(r.name + ' — ' + r.desc, '#fee761');
       burst(it.x, it.y, ['#fee761', '#f4f4f4'], 12, 110, 0.5, 3);
+      flash(it.x, it.y, 80, '255,230,120', 0.35);
       break;
     }
     default: return false;                            // weapons are swapped with the Use key
@@ -1850,9 +1872,14 @@ function updateEffects(dt) {
   for (const p of particles) {
     p.life -= dt;
     p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.float) continue;                            // embers and dust just drift
     const f = Math.exp(-4 * dt);
     p.vx *= f; p.vy *= f;
   }
+  for (const gh of ghosts) gh.life -= dt;
+  for (const fl of flashes) fl.life -= dt;
+  ghosts = ghosts.filter(gh => gh.life > 0);
+  flashes = flashes.filter(fl => fl.life > 0);
   for (const n of numbers) { n.life -= dt; n.y -= 38 * dt; }
   for (const s of slashes) s.life -= dt;
   for (const t of toasts) t.life -= dt;
@@ -1928,6 +1955,9 @@ function drawTorches(g) {
   for (const t of dungeon.torches) {
     if (!dungeon.explored[idx(t.tx, t.ty)]) continue;
     drawSprite(g, 'flame' + Math.floor(game.anim * 9 + t.seed) % 3, t.x, t.y - 4);
+    if (game.state === 'playing' && Math.random() < 0.07 && Math.abs(t.x - player.x) < 460 && Math.abs(t.y - player.y) < 360)
+      particles.push({ x: t.x + (Math.random() - 0.5) * 6, y: t.y - 10, vx: (Math.random() - 0.5) * 12, vy: -22 - Math.random() * 22,
+        life: 0.8, max: 0.8, color: Math.random() < 0.5 ? '#feae34' : '#f77622', size: 2, float: true });
   }
 }
 
@@ -1945,20 +1975,7 @@ function drawItem(g, it) {
   }
   drawShadow(g, it.x, it.y + 8, it.kind === 'gold' ? 5 : 9);
   if (it.kind === 'gold') { drawSprite(g, 'coin', it.x, it.y + bob * 0.5); return; }
-  if (it.kind === 'weapon') {
-    g.fillStyle = RARITIES[it.weapon.rarity].color;
-    g.globalAlpha = 0.25 + 0.12 * Math.sin(game.anim * 5 + it.seed);
-    g.beginPath(); g.arc(it.x, it.y, 17, 0, TAU); g.fill();
-    g.globalAlpha = 1;
-    drawSprite(g, WEAPONS[it.weapon.type].icon, it.x, it.y - 2 + bob);
-    return;
-  }
-  if (it.kind === 'relic') {
-    g.fillStyle = '#fee761'; g.globalAlpha = 0.2 + 0.1 * Math.sin(game.anim * 5 + it.seed);
-    g.beginPath(); g.arc(it.x, it.y, 16, 0, TAU); g.fill();
-    g.globalAlpha = 1;
-  }
-  drawSprite(g, it.kind === 'relic' ? it.relic : 'potion', it.x, it.y - 2 + bob);
+  drawSprite(g, it.kind === 'weapon' ? WEAPONS[it.weapon.type].icon : it.kind === 'relic' ? it.relic : 'potion', it.x, it.y - 2 + bob);
 }
 
 function drawHeldWeapon(g, p) {
@@ -2006,10 +2023,6 @@ function drawPlayer(g) {
 
 function drawEnemy(g, e) {
   const flash = e.flash > 0, es = e.elite ? ELITE_SCALE : 1;
-  if (e.elite) {                                      // champions glow gold
-    g.fillStyle = `rgba(254,231,97,${0.2 + 0.1 * Math.sin(game.anim * 6)})`;
-    g.beginPath(); g.arc(e.x, e.y - 2, e.r + 12, 0, TAU); g.fill();
-  }
   switch (e.type) {
     case 'slime': case 'mini': {
       const s = e.type === 'mini' ? 0.62 : es;
@@ -2042,10 +2055,9 @@ function drawEnemy(g, e) {
       if (e.state === 'ringTell' || e.state === 'chargeTell' || e.state === 'slamTell' || e.state === 'roar' || e.state === 'dying') {
         ox = (Math.random() - 0.5) * 5; oy = (Math.random() - 0.5) * 5;
       }
-      if (e.phase2 && e.state !== 'dying') {
-        g.fillStyle = `rgba(247,118,34,${0.18 + 0.08 * Math.sin(game.anim * 8)})`;
-        g.beginPath(); g.arc(e.x, e.y - 4, 52, 0, TAU); g.fill();
-      }
+      if (game.state === 'playing' && e.state !== 'dying' && Math.random() < (e.phase2 ? 0.5 : 0.2))      // crown of fire
+        particles.push({ x: e.x + (Math.random() - 0.5) * 34, y: e.y - 50, vx: (Math.random() - 0.5) * 16, vy: -30 - Math.random() * 30,
+          life: 0.6, max: 0.6, color: Math.random() < 0.5 ? '#feae34' : '#f77622', size: 3, float: true });
       const dim = e.state === 'stun';
       drawSprite(g, 'boss', e.x + ox, e.y - 14 + oy + Math.sin(e.anim * 2.5) * 3, 1,
         flash || (e.state === 'dying' && Math.floor(game.anim * 16) % 2 === 0), 1, dim ? 0.92 : 1);
@@ -2118,41 +2130,120 @@ function drawBullet(g, b) {
   }
 }
 
-function punchLight(x, y, r, strength) {
-  const gr = lctx.createRadialGradient(x, y, r * 0.1, x, y, r);
-  gr.addColorStop(0, `rgba(0,0,0,${strength})`);
-  gr.addColorStop(0.55, `rgba(0,0,0,${strength * 0.9})`);
-  gr.addColorStop(1, 'rgba(0,0,0,0)');
-  lctx.fillStyle = gr;
-  lctx.beginPath(); lctx.arc(x, y, r, 0, TAU); lctx.fill();
+// Soft round sprites reused for every light: one erases darkness, the others add coloured glow.
+const lightSprite = makeCanvas(128, 128);
+{
+  const g = lightSprite.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.93)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+}
+const glowCache = {};
+function glowSprite(rgb) {
+  if (!glowCache[rgb]) {
+    const c = makeCanvas(64, 64), g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${rgb},1)`); gr.addColorStop(0.35, `rgba(${rgb},0.45)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    glowCache[rgb] = c;
+  }
+  return glowCache[rgb];
+}
+const vignette = makeCanvas(VIEW_W, VIEW_H);
+{
+  const g = vignette.getContext('2d'), gr = g.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 250, VIEW_W / 2, VIEW_H / 2, 540);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = gr; g.fillRect(0, 0, VIEW_W, VIEW_H);
+}
+const motes = [];
+for (let i = 0; i < MOTE_COUNT; i++)
+  motes.push({ x: Math.random() * VIEW_W, y: Math.random() * VIEW_H, vx: (Math.random() - 0.5) * 10, k: 0.5 + Math.random(), ph: Math.random() * 10 });
+
+// Lights are gathered as flat lists: [x, y, radius, strength] punches and [x, y, radius, rgb, alpha] glows.
+function gatherLights(cx, cy, punches, glows) {
+  const onScreen = (x, y, m) => x > cx - m && y > cy - m && x < cx + VIEW_W + m && y < cy + VIEW_H + m;
+  punches.push(player.x, player.y, LIGHT_RADIUS + Math.sin(game.anim * 3) * 5, 1);
+  glows.push(player.x, player.y, 190, '255,205,150', 0.07);
+  for (const t of dungeon.torches) {
+    if (!dungeon.explored[idx(t.tx, t.ty)] || !onScreen(t.x, t.y, 150)) continue;
+    const r = 130 + Math.sin(game.anim * 11 + t.seed) * 7;
+    punches.push(t.x, t.y + 12, r, 0.85);
+    glows.push(t.x, t.y + 10, r, '255,140,45', 0.22, t.x, t.y - 4, 24, '255,190,80', 0.3);
+  }
+  for (const b of bullets) {
+    if (b.kind === 'orb') { punches.push(b.x, b.y, 50, 0.7); glows.push(b.x, b.y, b.isEnemy ? 26 : 34, b.isEnemy ? '255,70,40' : '255,170,60', 0.6); }
+    else glows.push(b.x, b.y, 16, b.isEnemy ? '255,90,70' : '220,235,255', 0.35);
+  }
+  for (const it of items) {
+    if (!onScreen(it.x, it.y, 40) || !dungeon.explored[idx(Math.floor(it.x / TILE), Math.floor(it.y / TILE))]) continue;
+    const pulse = 0.75 + 0.25 * Math.sin(game.anim * 5 + it.seed);
+    if (it.kind === 'weapon') glows.push(it.x, it.y, 34, RARITIES[it.weapon.rarity].rgb, 0.5 * pulse);
+    else if (it.kind === 'relic') glows.push(it.x, it.y, 32, '255,225,110', 0.5 * pulse);
+    else if (it.kind === 'potion') glows.push(it.x, it.y, 24, '255,80,90', 0.3 * pulse);
+    else glows.push(it.x, it.y, 10, '255,230,120', 0.35);
+  }
+  for (const e of enemies) {
+    if (e.type === 'boss' && e.awake) {
+      punches.push(e.x, e.y, 220, 0.85);
+      if (e.state !== 'dying') {
+        glows.push(e.x, e.y - 10, e.phase2 ? 130 : 105, e.phase2 ? '255,120,40' : '255,60,50', e.phase2 ? 0.34 : 0.22);
+        glows.push(e.x - 18, e.y - 16, 15, '255,235,120', 0.8, e.x + 18, e.y - 16, 15, '255,235,120', 0.8);
+      }
+    } else if (e.elite && dungeon.explored[idx(Math.floor(e.x / TILE), Math.floor(e.y / TILE))]) glows.push(e.x, e.y - 4, e.r + 26, '255,225,110', 0.3);
+  }
+  const mer = dungeon.merchant;
+  if (mer && dungeon.explored[idx(Math.floor(mer.x / TILE), Math.floor(mer.y / TILE))]) {
+    punches.push(mer.x, mer.y, 115, 0.6);
+    glows.push(mer.x, mer.y - 2, 50, '255,190,80', 0.2 + 0.04 * Math.sin(game.anim * 7));
+  }
+  const ex = dungeon.exitRoom;
+  if (ex && dungeon.explored[idx(ex.cx, ex.cy)]) {
+    punches.push(ex.cx * TILE + 16, ex.cy * TILE + 16, 80, 0.55);
+    glows.push(ex.cx * TILE + 16, ex.cy * TILE + 16, 46, '255,230,110', 0.3 + 0.1 * Math.sin(game.anim * 4));
+  }
+  for (const fl of flashes) {
+    const k = fl.life / fl.max;
+    punches.push(fl.x, fl.y, fl.r, 0.6 * k);
+    glows.push(fl.x, fl.y, fl.r * (1.15 - 0.3 * k), fl.rgb, 0.55 * k);
+  }
 }
 
 function drawLighting(g, cx, cy) {
+  const punches = [], glows = [];
+  gatherLights(cx, cy, punches, glows);
   lctx.globalCompositeOperation = 'source-over';
+  lctx.globalAlpha = 1;
   lctx.clearRect(0, 0, VIEW_W, VIEW_H);
-  lctx.fillStyle = `rgba(${theme().dark},0.93)`;
+  lctx.fillStyle = `rgba(${theme().dark},${DARKNESS})`;
   lctx.fillRect(0, 0, VIEW_W, VIEW_H);
   lctx.globalCompositeOperation = 'destination-out';
-  punchLight(player.x - cx, player.y - cy, LIGHT_RADIUS + Math.sin(game.anim * 3) * 5, 1);
-  const lit = [];
-  for (const t of dungeon.torches) {
-    if (!dungeon.explored[idx(t.tx, t.ty)]) continue;
-    const x = t.x - cx, y = t.y - cy + 12;
-    if (x < -150 || y < -150 || x > VIEW_W + 150 || y > VIEW_H + 150) continue;
-    const r = 125 + Math.sin(game.anim * 11 + t.seed) * 6;
-    punchLight(x, y, r, 0.85);
-    lit.push([x, y, r]);
+  for (let i = 0; i < punches.length; i += 4) {
+    const r = punches[i + 2];
+    lctx.globalAlpha = punches[i + 3];
+    lctx.drawImage(lightSprite, punches[i] - cx - r, punches[i + 1] - cy - r, r * 2, r * 2);
   }
-  for (const b of bullets) if (b.kind === 'orb') punchLight(b.x - cx, b.y - cy, 46, 0.7);
-  for (const e of enemies) if (e.type === 'boss' && e.awake) punchLight(e.x - cx, e.y - cy, 210, 0.85);
   g.drawImage(lightCanvas, 0, 0);
-  g.globalCompositeOperation = 'lighter';                         // warm torch glow
-  for (const [x, y, r] of lit) {
-    const gr = g.createRadialGradient(x, y, 4, x, y, r);
-    gr.addColorStop(0, 'rgba(255,150,50,0.15)'); gr.addColorStop(1, 'rgba(255,120,30,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+
+  g.globalCompositeOperation = 'lighter';             // coloured glow on top of the darkness
+  for (let i = 0; i < glows.length; i += 5) {
+    const r = glows[i + 2];
+    g.globalAlpha = glows[i + 4];
+    g.drawImage(glowSprite(glows[i + 3]), glows[i] - cx - r, glows[i + 1] - cy - r, r * 2, r * 2);
   }
+  // Dust, spores or embers hanging in the air, only visible inside your light.
+  const th = theme(), px = player.x - cx, py = player.y - cy;
+  g.fillStyle = `rgb(${th.mote})`;
+  for (const m of motes) {
+    m.x += (m.vx + Math.sin(game.anim * 0.7 + m.ph) * 6) / 60;
+    m.y += th.moteVy * m.k / 60;
+    if (m.x < -4) m.x += VIEW_W + 8; else if (m.x > VIEW_W + 4) m.x -= VIEW_W + 8;
+    if (m.y < -4) m.y += VIEW_H + 8; else if (m.y > VIEW_H + 4) m.y -= VIEW_H + 8;
+    const a = clamp(1 - Math.hypot(m.x - px, m.y - py) / 300, 0, 1) * (0.25 + 0.25 * Math.sin(game.anim * 2 + m.ph));
+    if (a <= 0.02) continue;
+    g.globalAlpha = a;
+    g.fillRect(Math.round(m.x), Math.round(m.y), 2, 2);
+  }
+  g.globalAlpha = 1;
   g.globalCompositeOperation = 'source-over';
+  g.drawImage(vignette, 0, 0);
 }
 
 function drawWorld(g) {
@@ -2188,6 +2279,14 @@ function drawWorld(g) {
     }
     else drawPlayer(g);
   }
+  for (const gh of ghosts) {
+    const k = gh.life / gh.max, sc = 1 + gh.grow * (1 - k);
+    g.globalAlpha = k * (gh.dash ? 0.5 : 0.75);
+    const img = gh.dash ? SPR_DASH : SPR_FLASH[gh.name];
+    g.save(); g.translate(Math.round(gh.x), Math.round(gh.y)); g.scale(gh.flip * sc, sc);
+    g.drawImage(img, -img.width / 2, -img.height / 2); g.restore();
+  }
+  g.globalAlpha = 1;
   for (const b of bullets) drawBullet(g, b);
   for (const s of slashes) {
     const k = clamp(s.life / 0.16, 0, 1);
