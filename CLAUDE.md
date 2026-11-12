@@ -28,8 +28,6 @@ Two self-contained browser games — no build step, no dependencies, no package 
 - `tictactoe.html` — Tic Tac Toe with 2-player and vs-computer modes (minimax AI with alpha-beta pruning)
 - `shooter.html` — Top-down pixel shooter with wave-based enemy spawning
 
-- `study-hub/` — Year 7 study website (multi-file, no build step). See `study-hub/README.md`; content lives in `study-hub/data/`
-
 ## shooter.html Architecture
 
 Everything runs inside a single `requestAnimationFrame` loop. The file is organized into clearly marked sections:
