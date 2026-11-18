@@ -27,6 +27,7 @@ Two self-contained browser games — no build step, no dependencies, no package 
 
 - `tictactoe.html` — Tic Tac Toe with 2-player and vs-computer modes (minimax AI with alpha-beta pruning)
 - `shooter.html` — Top-down pixel shooter with wave-based enemy spawning
+- `bunker9.html` — Bunker 9: The Quiet, a choice-driven text adventure with no randomness. Scenes live in the `SC` object (`enter` / `choices` / `parse` / `hint`; `hub: true` marks a location whose exits are added automatically). Story flags are listed in `FLAGS`, which is append-only because save codes store flags by position. Endings are in `ENDINGS` + `ENDING_TEXT`. `window.__b9` is a test hook for automated playthroughs.
 
 ## shooter.html Architecture
 
