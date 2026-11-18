@@ -1,0 +1,2642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Bunker 9: The Quiet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Gochi+Hand&family=IBM+Plex+Mono:wght@400;500;600&family=Saira+Stencil+One&display=swap">
+<style>
+/* Layout: one-screen field terminal. Stencil header + live sound-meter strip, a scrolling field log, and a docked choice keypad with a command line. */
+:root{
+  --bg:#0e1216; --panel:#151b21; --panel-2:#1b232b; --line:#29343f; --line-2:#3c4a57;
+  --fg:#ebe6da; --muted:#929ca7; --faint:#5f6a75;
+  --amber:#f3a83b; --amber-ink:#1b1306; --amber-soft:rgba(243,168,59,.13);
+  --hum:#b4a7ff; --hum-soft:rgba(180,167,255,.12);
+  --danger:#ff6d5f; --ok:#7bd69a;
+  --c-mop:#5fd6c6; --c-vendr:#ff92c8; --c-bert:#f2df74; --c-varga:#ffa06f; --c-pip:#a8df74; --c-tape:#d6ceff;
+  --sticky-bg:#f0d470; --sticky-ink:#2b2306; --slate:#22302b; --slate-ink:#eef0e6; --shadow:rgba(0,0,0,.35);
+  --f-display:"Saira Stencil One","Arial Narrow",Impact,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --f-hand:"Gochi Hand","Comic Sans MS","Bradley Hand",cursive;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#e7eaed; --panel:#f6f7f8; --panel-2:#eceff2; --line:#c6cdd4; --line-2:#a7b1bb;
+    --fg:#17202a; --muted:#53606b; --faint:#86919b;
+    --amber:#a65600; --amber-ink:#fff7ea; --amber-soft:rgba(166,86,0,.10);
+    --hum:#5842d2; --hum-soft:rgba(88,66,210,.08);
+    --danger:#c73326; --ok:#1c7a3c;
+    --c-mop:#0a776a; --c-vendr:#b42e6e; --c-bert:#7f6100; --c-varga:#b3461a; --c-pip:#3b7413; --c-tape:#4a3eb2;
+    --sticky-bg:#f4dc7e; --sticky-ink:#2b2306; --slate:#2b3a33; --slate-ink:#eef0e6; --shadow:rgba(20,30,40,.14);
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#e7eaed; --panel:#f6f7f8; --panel-2:#eceff2; --line:#c6cdd4; --line-2:#a7b1bb;
+  --fg:#17202a; --muted:#53606b; --faint:#86919b;
+  --amber:#a65600; --amber-ink:#fff7ea; --amber-soft:rgba(166,86,0,.10);
+  --hum:#5842d2; --hum-soft:rgba(88,66,210,.08);
+  --danger:#c73326; --ok:#1c7a3c;
+  --c-mop:#0a776a; --c-vendr:#b42e6e; --c-bert:#7f6100; --c-varga:#b3461a; --c-pip:#3b7413; --c-tape:#4a3eb2;
+  --sticky-bg:#f4dc7e; --sticky-ink:#2b2306; --slate:#2b3a33; --slate-ink:#eef0e6; --shadow:rgba(20,30,40,.14);
+  color-scheme:light;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input{font:inherit;color:inherit}
+.app{height:100%;max-width:880px;margin:0 auto;display:flex;flex-direction:column;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* header */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:12px 10px}
+.brand{display:flex;flex-direction:column;min-width:0}
+.logo{font-family:var(--f-display);font-size:28px;line-height:1;letter-spacing:.03em;white-space:nowrap}
+.logo b{font-weight:400;color:var(--amber)}
+.sub{font:500 10.5px/1 var(--f-mono);letter-spacing:.16em;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.tool{text-decoration:none;font:500 12px/1 var(--f-mono);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;color:var(--fg)}
+.tool:hover:not(:disabled){border-color:var(--amber)}
+.tool:disabled{opacity:.38;cursor:default}
+.tool[aria-pressed="false"] .ic{filter:grayscale(1);opacity:.6}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+/* sound meter */
+.scope{position:relative;height:40px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden;transition:border-color .2s}
+.scope.hurt{border-color:var(--danger)}
+.scope canvas{display:block;width:100%;height:100%}
+.scope .lbl{position:absolute;top:50%;transform:translateY(-50%);font:500 10.5px/1 var(--f-mono);letter-spacing:.12em;color:var(--muted);background:var(--panel);padding:4px 6px;border-radius:4px;font-variant-numeric:tabular-nums}
+#dbl{left:6px} #clk{right:6px;color:var(--amber)}
+
+/* log */
+.log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-block:4px 18px;position:relative}
+.turn{padding-block:14px;border-bottom:1px dashed var(--line)}
+.turn:last-child{border-bottom:0}
+.turn.old{opacity:.6}
+.turn.old .status{display:none}
+.echo{font:500 14px/1.4 var(--f-mono);color:var(--amber);margin-bottom:8px;overflow-wrap:anywhere}
+.turn p{margin:.45em 0;max-width:66ch}
+.turn strong{font-weight:700}
+.say{display:flex;gap:10px;align-items:baseline;margin:.6em 0;max-width:72ch}
+.say .tag{flex:none;font:600 10.5px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;padding:4px 7px;border:1px solid currentColor;border-radius:4px;color:var(--who);position:relative;top:-2px;white-space:nowrap}
+.say .line{min-width:0}
+.c-mop{--who:var(--c-mop)} .c-vendr{--who:var(--c-vendr)} .c-bert{--who:var(--c-bert)} .c-varga{--who:var(--c-varga)} .c-pip{--who:var(--c-pip)} .c-hum{--who:var(--hum)} .c-tape{--who:var(--c-tape)}
+.c-hum .tag{background:var(--hum-soft)}
+.c-hum .line{color:var(--hum)}
+.c-tape .line{color:var(--c-tape);font-style:italic}
+.c-pip .line{font-family:var(--f-hand);font-size:1.15em;text-transform:uppercase;letter-spacing:.02em}
+.note{font:500 13px/1.4 var(--f-mono);color:var(--muted);margin:.3em 0}
+.note.up{color:var(--ok)} .note.down{color:var(--danger)} .note.item{color:var(--amber)} .note.meet{color:var(--hum)} .note.interp{color:var(--faint)}
+.intro{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline;margin-bottom:6px}
+.intro-name{font-family:var(--f-display);font-size:26px;line-height:1}
+.intro-skill{font:500 13px/1.3 var(--f-mono);color:var(--amber)}
+.intro-skill small{color:var(--muted)}
+.scratch{font-family:var(--f-display);font-size:21px;letter-spacing:.07em;line-height:1.3;padding:12px 16px;border:1px dashed var(--line-2);border-radius:4px;background:var(--panel-2);transform:rotate(-1deg);width:fit-content;max-width:100%;margin:.7em 0}
+.sticky{font-family:var(--f-hand);font-size:20px;line-height:1.3;background:var(--sticky-bg);color:var(--sticky-ink);padding:10px 14px;width:fit-content;max-width:100%;transform:rotate(1.2deg);box-shadow:0 3px 0 var(--shadow);margin:.8em 0}
+.chalk{font-family:var(--f-hand);font-size:19px;line-height:1.5;background:var(--slate);color:var(--slate-ink);padding:12px 16px;border-radius:6px;margin:.7em 0;max-width:62ch;text-transform:uppercase}
+.riddle{font-style:italic;font-size:1.08em;line-height:1.6;padding:12px 16px;border:1px dashed var(--amber);border-radius:6px;background:var(--amber-soft);margin:.7em 0;width:fit-content;max-width:100%}
+.margin{font-family:var(--f-hand);font-size:19px;line-height:1.4;padding:12px 16px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;margin:.7em 0;max-width:60ch}
+.quote{font-style:italic;font-size:1.04em;padding:6px 0 6px 18px;border-left:3px solid var(--line-2);margin:.7em 0;max-width:60ch}
+.labels{display:flex;flex-wrap:wrap;gap:6px;margin:.7em 0}
+.labels span{font:500 11px/1.2 var(--f-mono);letter-spacing:.06em;padding:6px 9px;border:1px solid var(--hum);color:var(--hum);border-radius:999px;background:var(--hum-soft)}
+.honk{font-family:var(--f-display);font-size:54px;line-height:1;color:var(--c-bert);margin:.15em 0;display:inline-block;animation:shake .45s 2}
+.silence{font:500 15px/1 var(--f-mono);color:var(--faint);padding:14px 20px;border:1px dashed var(--line-2);border-radius:18px;width:fit-content;letter-spacing:.5em;margin:.6em 0}
+@keyframes shake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-4px) rotate(-2deg)}75%{transform:translateX(4px) rotate(2deg)}}
+
+/* status bar */
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-top:12px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;font:500 12.5px/1.4 var(--f-mono);color:var(--muted)}
+.st-loc{font-family:var(--f-display);font-size:15px;color:var(--fg);letter-spacing:.05em}
+.st-hp{color:var(--danger);letter-spacing:2px;font-size:14px}
+.st-hp .off{color:var(--line-2)}
+.st-items{color:var(--fg);overflow-wrap:anywhere}
+.st-items sub{font-size:9px;color:var(--muted)}
+.st-items .none{color:var(--faint)}
+.st-trust{display:inline-flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+.tm{display:inline-flex;align-items:center;gap:5px;color:var(--who)}
+.tm .bars{display:inline-flex;gap:2px}
+.tm i{width:6px;height:10px;border-radius:1px;background:var(--line-2)}
+.tm i.on{background:var(--who)}
+
+/* dock */
+.dock{border-top:1px solid var(--line);padding-block:10px 12px;background:var(--bg)}
+.ask{font:600 10.5px/1 var(--f-mono);letter-spacing:.16em;color:var(--muted);margin:0 0 8px}
+.choices{display:grid;gap:6px}
+.choice{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;font:400 16px/1.35 var(--f-body);cursor:pointer;transition:border-color .12s,background .12s;color:var(--fg)}
+.choice:hover{border-color:var(--amber);background:var(--panel-2)}
+.choice .k{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:6px;background:var(--amber);color:var(--amber-ink);font:600 13px/1 var(--f-mono);box-shadow:inset 0 -2px 0 var(--shadow)}
+.choice .t{min-width:0}
+.choice .sk{margin-left:auto;flex:none;font:600 9.5px/1 var(--f-mono);letter-spacing:.12em;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:3px 5px}
+.prompt{display:flex;align-items:center;gap:8px;margin-top:8px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:4px 4px 4px 12px}
+.prompt:focus-within{border-color:var(--amber)}
+.caret{font:600 16px/1 var(--f-mono);color:var(--amber)}
+#in{flex:1;min-width:0;background:transparent;border:0;outline:0;font:400 15px/1.4 var(--f-mono);padding:9px 0;color:var(--fg)}
+#in::placeholder{color:var(--faint)}
+.go{font:600 12px/1 var(--f-mono);letter-spacing:.08em;background:var(--amber);color:var(--amber-ink);border:0;border-radius:6px;padding:10px 12px;cursor:pointer}
+
+/* cards in the log */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:.6em 0;max-width:100%}
+.card h3{font-family:var(--f-display);font-weight:400;font-size:21px;letter-spacing:.05em;margin:0 0 10px}
+.card p{margin:.4em 0}
+.muted{color:var(--muted)} .small{font-size:.86em}
+.fl{font:600 10.5px/1.2 var(--f-mono);letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.inv-meta{display:flex;flex-wrap:wrap;gap:6px 18px;font:500 12.5px/1.4 var(--f-mono);color:var(--muted);margin-bottom:12px}
+.inv-meta b{color:var(--fg)}
+.inv-list{display:grid;gap:10px}
+.inv-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start}
+.inv-row .ie{font-size:20px;line-height:1.2}
+.inv-row b{display:block}
+.inv-row small{display:block;color:var(--muted);font-size:.86em;line-height:1.4}
+.mini{font:600 10.5px/1 var(--f-mono);letter-spacing:.08em;padding:7px 9px;border-radius:6px;border:1px solid var(--amber);background:var(--amber-soft);color:var(--amber);cursor:pointer;white-space:nowrap}
+.inv-notes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.nchip{font:500 12px/1 var(--f-mono);padding:6px 8px;border-radius:6px;border:1px dashed var(--line-2);color:var(--faint)}
+.nchip.have{border-style:solid;border-color:var(--amber);color:var(--amber)}
+.nchip.placed{border-style:solid;border-color:var(--ok);color:var(--ok)}
+.zone{margin-top:12px}
+.zone:first-of-type{margin-top:0}
+.zone .fl{margin-bottom:6px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.cell{border:1px solid var(--line);border-radius:7px;padding:7px 8px;min-height:50px;font:500 12px/1.25 var(--f-mono);background:var(--panel-2);display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}
+.cell .ce{font-size:16px}
+.cell.here{border-color:var(--amber);background:var(--amber-soft)}
+.cell.here::after{content:"YOU ARE HERE";font-size:9px;letter-spacing:.12em;color:var(--amber)}
+.cell.fog{border-style:dashed;color:var(--faint);background:transparent}
+.cell.empty{visibility:hidden}
+.zone.unknown .cell{display:none}
+.save-code{display:block;width:100%;font:500 13px/1.45 var(--f-mono);padding:10px 12px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--fg);word-break:break-all;resize:none;margin:8px 0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.help-grid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;font-size:.95em}
+.help-grid code{font:600 13px/1.4 var(--f-mono);color:var(--amber)}
+
+/* title */
+.title{padding-block:18px 8px}
+.t-kicker{font:500 11px/1.3 var(--f-mono);letter-spacing:.18em;color:var(--muted)}
+.big{font-family:var(--f-display);font-weight:400;font-size:clamp(52px,13vw,92px);line-height:.88;margin:.12em 0 .18em;letter-spacing:.01em}
+.big span{display:block;font-size:.38em;color:var(--amber);letter-spacing:.14em;margin-top:.2em}
+.t-lede{font-size:1.08em;max-width:58ch;margin:.4em 0 .8em}
+.t-rules{list-style:none;padding:0;margin:0 0 18px;display:flex;flex-wrap:wrap;gap:6px 18px;font:500 13px/1.4 var(--f-mono);color:var(--muted)}
+.t-rules b{color:var(--fg)}
+.t-form{display:grid;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.t-form input,.t-loadrow input{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:11px 12px;font:400 16px/1.3 var(--f-body);color:var(--fg)}
+.t-form input:focus,.t-loadrow input:focus{border-color:var(--amber);outline:0}
+.skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.skill,.cat{display:flex;gap:10px;align-items:center;text-align:left;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;color:var(--fg)}
+.skill:hover,.cat:hover{border-color:var(--amber)}
+.skill[aria-pressed="true"]{border-color:var(--amber);background:var(--amber-soft)}
+.skill .se,.cat .se{font-size:22px}
+.skill b,.cat b{display:block;font-size:15px}
+.skill small,.cat small{display:block;color:var(--muted);font-size:12.5px;line-height:1.3}
+.cmap{display:grid;gap:8px;padding:12px;border:1px dashed var(--amber);border-radius:10px}
+.cmap p{margin:0}
+.start{justify-self:start;font-family:var(--f-display);font-size:22px;letter-spacing:.06em;background:var(--amber);color:var(--amber-ink);border:0;border-radius:9px;padding:12px 22px;cursor:pointer;box-shadow:inset 0 -3px 0 var(--shadow)}
+.t-err{margin:0;font:500 13px/1.4 var(--f-mono);color:var(--danger);min-height:1em}
+.t-load{margin-top:14px}
+.t-load summary{cursor:pointer;font:500 13px/1.4 var(--f-mono);color:var(--muted)}
+.t-loadrow{display:flex;gap:8px;margin-top:10px}
+.t-ends{margin-top:18px}
+.eg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.eg div{border:1px dashed var(--line-2);border-radius:7px;padding:8px;font:500 11px/1.3 var(--f-mono);color:var(--faint);min-height:52px;display:flex;flex-direction:column;gap:3px}
+.eg div.got{border-style:solid;border-color:var(--amber);color:var(--fg);background:var(--amber-soft)}
+.eg .ee{font-size:16px}
+
+/* endings */
+.ending{margin-top:14px;padding:20px;border:1px solid var(--amber);border-radius:12px;background:var(--panel)}
+.end-kicker{font:600 11px/1.3 var(--f-mono);letter-spacing:.16em;color:var(--amber)}
+.end-emoji{font-size:44px;line-height:1;margin-top:10px}
+.end-title{font-family:var(--f-display);font-weight:400;font-size:clamp(30px,7vw,46px);line-height:1;margin:.15em 0 .5em;letter-spacing:.02em;text-wrap:balance}
+.end-epi{margin-top:16px;padding-top:12px;border-top:1px dashed var(--line)}
+.end-stats{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:14px;font:500 12.5px/1.4 var(--f-mono);color:var(--muted)}
+.end-stats b{color:var(--fg)}
+
+@media (max-width:620px){
+  body{font-size:16px}
+  .tool .lb{display:none}
+  .tool{padding:7px}
+  .tools{flex-wrap:nowrap;gap:4px;flex:none}
+  .brand{flex:1}
+  .logo{font-size:22px}
+  .sub{font-size:9.5px;letter-spacing:.12em}
+  .choice{padding:7px 10px;font-size:15px;gap:10px}
+  .choice .k{width:24px;height:24px}
+  .scope{height:32px}
+  .eg{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .say{flex-direction:column;gap:4px}
+  .honk{font-size:44px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">BUNKER <b>9</b></div>
+      <div class="sub">THE QUIET · HUSHWELL ACOUSTICS</div>
+    </div>
+    <nav class="tools" aria-label="Game commands">
+      <a class="tool" id="hublink" href="index.html" title="Back to the arcade"><span class="ic">←</span><span class="lb">Arcade</span></a>
+      <button class="tool" type="button" data-cmd="inventory" title="Inventory (type: inventory)"><span class="ic">🎒</span><span class="lb">Inventory</span></button>
+      <button class="tool" type="button" data-cmd="map" title="Map (type: map)"><span class="ic">🗺️</span><span class="lb">Map</span></button>
+      <button class="tool" type="button" data-cmd="hint" title="Hint (type: hint)"><span class="ic">💡</span><span class="lb">Hint</span></button>
+      <button class="tool" type="button" data-cmd="save" title="Save (type: save)"><span class="ic">💾</span><span class="lb">Save</span></button>
+      <button class="tool" type="button" id="snd" aria-pressed="true" title="Sound on/off"><span class="ic">🔊</span><span class="lb">Sound</span></button>
+    </nav>
+  </header>
+  <div class="scope" id="scopebox" aria-hidden="true">
+    <canvas id="scope"></canvas>
+    <span class="lbl" id="dbl">AMBIENT 38 dB</span>
+    <span class="lbl" id="clk">03:17</span>
+  </div>
+  <main class="log" id="log" aria-live="polite"></main>
+  <footer class="dock" id="dock" hidden>
+    <div class="ask" id="ask">WHAT DO YOU DO?</div>
+    <div class="choices" id="choices"></div>
+    <form class="prompt" id="cmd" autocomplete="off">
+      <label class="caret" for="in">&gt;</label>
+      <input id="in" maxlength="80" placeholder="Type your own action… or: inventory, map, hint, save" enterkeyhint="go">
+      <button class="go" type="submit">DO IT</button>
+    </form>
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   DOM
+   ===================================================================== */
+const logEl = document.getElementById('log');
+const choicesEl = document.getElementById('choices');
+const askEl = document.getElementById('ask');
+const formEl = document.getElementById('cmd');
+const inEl = document.getElementById('in');
+const dockEl = document.getElementById('dock');
+const scopeBox = document.getElementById('scopebox');
+const dblEl = document.getElementById('dbl');
+const clkEl = document.getElementById('clk');
+const sndBtn = document.getElementById('snd');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const finePointer = window.matchMedia('(pointer: fine)').matches;
+
+/* =====================================================================
+   WORLD DATA
+   ===================================================================== */
+const LOCS = {
+  pod:     { name:'Pod Room',          zone:'bunker',  e:'🛏️', db:38 },
+  corr:    { name:'Corridor B',        zone:'bunker',  e:'🚧', db:40 },
+  mess:    { name:'Mess Hall',         zone:'bunker',  e:'🍽️', db:42 },
+  green:   { name:'Greenhouse',        zone:'bunker',  e:'🌿', db:39 },
+  maint:   { name:'Maintenance Shaft', zone:'bunker',  e:'🔧', db:57 },
+  radio:   { name:'Radio Room',        zone:'bunker',  e:'📻', db:44 },
+  archive: { name:'Archive',           zone:'bunker',  e:'🗄️', db:35 },
+  vault:   { name:'Vault Door',        zone:'bunker',  e:'🚪', db:37 },
+  square:  { name:'Town Square',       zone:'surface', e:'⛲', db:0 },
+  library: { name:'Library',           zone:'surface', e:'📚', db:0 },
+  tower:   { name:'Bell Tower',        zone:'surface', e:'🔔', db:0 },
+  jars:    { name:'The Jarchive',      zone:'deep',    e:'🫙', db:71 },
+  engine:  { name:'The Choir Engine',  zone:'deep',    e:'🎛️', db:88 },
+};
+const LOC_IDS = Object.keys(LOCS);
+const ADJ = {
+  pod:['corr'], corr:['pod','mess','radio','vault'], mess:['corr','green'], green:['mess','maint'],
+  maint:['green','jars'], radio:['corr','archive'], archive:['radio'], vault:['corr','square'],
+  square:['vault','library','tower'], library:['square'], tower:['square'], jars:['maint','engine'], engine:['jars'],
+};
+const EXIT_LABEL = {
+  'mess>green':'🚶 Go through the kitchen door to the Greenhouse',
+  'green>maint':'🚶 Squeeze through the hatch to the Maintenance Shaft',
+  'maint>jars':'🪜 Climb down to Level D-1',
+  'jars>maint':'🪜 Climb back up to the Maintenance Shaft',
+  'jars>engine':'➡️ Follow the hum to the Choir Engine',
+  'engine>jars':'⬅️ Back to the Jarchive',
+  'vault>square':'⬆️ Climb the stairs to the surface',
+  'square>vault':'⬇️ Go back down into Bunker 9',
+};
+const LOC_WORDS = {
+  pod:['pod room','pods','sleep'], corr:['corridor','hallway','hall b'], mess:['mess hall','mess','cafeteria','kitchen','vending'],
+  green:['greenhouse','garden','plants'], maint:['maintenance','shaft'], radio:['radio'], archive:['archive','lab'],
+  vault:['vault'], square:['town square','square','town','outside','surface','upstairs'], library:['library'],
+  tower:['bell tower','tower','bell'], jars:['jarchive','jars','level d-1','d-1','downstairs','basement','down'], engine:['choir engine','engine'],
+};
+const MAP = [
+  { zone:'surface', title:'Surface · Ashgrove', rows:[['library','square','tower']] },
+  { zone:'bunker',  title:'Bunker 9', rows:[[null,'vault',null],['mess','corr','radio'],['green','pod','archive'],['maint',null,null]] },
+  { zone:'deep',    title:'Level D-1', rows:[['jars','engine',null]] },
+];
+
+const SKILLS = {
+  tech:    { label:'Fixing machines',      e:'🔧', blurb:'Robots, gadgets, wires', cat:'Machines & gadgets' },
+  animal:  { label:'Talking to animals',   e:'🐾', blurb:'Geese. Mostly geese.', cat:'Animals' },
+  lock:    { label:'Lockpicking',          e:'🔓', blurb:'Doors, boxes, padlocks', cat:'Locks & sneaking' },
+  memory:  { label:'Perfect memory',       e:'🧠', blurb:'Never forget a clue', cat:'Remembering & noticing' },
+  talk:    { label:'Bluffing & charm',     e:'🎭', blurb:'Talk your way into anything', cat:'Talking people into things' },
+  parkour: { label:'Parkour',              e:'🤸', blurb:'Climb anything, fit anywhere', cat:'Climbing & moving fast' },
+};
+const SKILL_IDS = Object.keys(SKILLS);
+const SKILL_WORDS = {
+  tech:['fix','machine','mechanic','engineer','tech','hack','robot','computer','build','repair','invent','electric','wire','coding','program','gadget','tinker','science'],
+  animal:['animal','goose','dog','cat','bird','pet','creature','zoo','vet','nature','beast','horse','fish','whisper'],
+  lock:['lock','pick','thief','steal','sneak','stealth','safe','crack','burgl','spy','hide','invisible'],
+  memory:['memory','remember','smart','genius','brain','clever','detective','observ','notice','photographic','puzzle','math','study','think','riddle','read'],
+  talk:['bluff','persua','talk','charm','lie','convinc','funny','joke','act','speech','negotiat','sell','friend','social','sing','music','rizz','cute','nice'],
+  parkour:['parkour','climb','jump','run','fast','athlet','acrobat','flip','gymnast','sport','strong','agile','speed','ninja','dodge','swim','skate','football','soccer','fight','karate'],
+};
+
+const CHARS = {
+  mop:{ name:'MOP' }, vendr:{ name:'VEND-R' }, bert:{ name:'Bertrand' },
+  varga:{ name:'Dr. Varga' }, hum:{ name:'The Hum' }, pip:{ name:'Pip' }, tape:{ name:'Tape' },
+};
+const TRUST_ORDER = ['mop','vendr','bert','varga','hum','pip'];
+
+const ITEMS = {
+  badge:   { e:'🪪', n:'Intern Badge', d:() => `Your face. Your name: **${N()}**. Underneath, in angry red letters: *INTERN — PLEASE DO NOT TOUCH ANYTHING.* Underlined twice.` },
+  flash:   { e:'🔦', n:() => F.lit ? 'Flashlight (working)' : 'Flashlight (dead)', d:() => F.lit ? 'Bright and heroic. Lights up dark places.' : 'Dead as a doornail. Needs batteries.' },
+  bat:     { e:'🔋', n:'Batteries', d:'Two AA batteries. Fresh-ish. They belong in something.' },
+  glow:    { e:'🍄', n:'Glowcap', d:'A mushroom that glows soft blue. Edible (+1 ♥). Also works as a tiny lantern. Geese go wild for them.' },
+  soup:    { e:'🥫', n:'Mystery Soup', d:'The label just says SOUP?. Heals 2 ♥. Probably.' },
+  pretz:   { e:'🥨', n:'Sadness Pretzels', d:'Shaped like little frowns. Tastes like a Monday.' },
+  chip:    { e:'💾', n:'Tiny Memory Chip', d:'Fingernail-sized. The label says: *MOP — LONG-TERM MEMORY. DO NOT LOSE.* (Somebody lost it.)' },
+  tape:    { e:'📼', n:'Your Tape', d:'A cassette labeled in YOUR handwriting: *"FOR ME. FROM ME."* There\'s a tape player in the Archive.' },
+  crowbar: { e:'⚒️', n:'Crowbar', d:'Heavy. Pointy. Opens things that would rather stay closed.' },
+  shatter: { e:'🗝️', n:'Shatter Key', d:"Dr. Varga's black glass key. Turn it in the Engine's core and the whole machine shatters. So does every sound inside it." },
+  chalk:   { e:'🖍️', n:'Chalk', d:'From Pip. On the surface, writing is the only way to talk.' },
+  book:    { e:'📕', n:'Echoes and Other Lonely Things', d:'A library book with about a hundred bookmarks. One passage is underlined three times.' },
+  jar:     { e:'🫙', n:"Jar: GERALD'S BURP, 2019", d:'It buzzes gently. You can feel the burp inside, waiting for an audience.' },
+  beep:    { e:'📟', n:"MOP's First Beep", d:'A tiny cartridge holding the very first sound MOP ever made. A *true note*.' },
+  music:   { e:'🎶', n:"Mama's Music Box", d:"Dr. Varga's mother's lullaby, in a tiny silver box. A *true note*." },
+  key:     { e:'🔑', n:"MOP's Grate Key", d:'Opens the grate down to Level D-1. Smells faintly of lemon floor cleaner.' },
+};
+const ITEM_IDS = Object.keys(ITEMS);
+
+// Every story flag. The save code stores these in order, so only append to the end.
+const FLAGS = ['out','lid','cup','slept','mem1','podLook','badge','labels','locker','clock','corrIntro','answeredHum','hidFromHum','liedHum','askedVoice','corrTok','mural',
+  'vendrMet','couch','clock2','kickedVendr','pried','picked','vComp','vStory','knowB4','vRiddle','haggled','pudding',
+  'bMet','satB','fedB','bPretz','grabbedB','sawBand','bTalk','bFollow','bSorry','bt1','bt2','bt3',
+  'mopMet','mopHello','mopHelp','mopTune','stoleKey','mopFixed','knowBrew','grateOpen','ventDown','mf1',
+  'radioSeen','headphones','vargaMet','vargaLied','caughtLie','yelledVarga','knowTower','vargaWhy','toldVargaHum','vargaCode','vargaHidPraise',
+  'humKnows','humWhat','knowJars','knowFirstVoice','humDemand','humLonely','thankedHum',
+  'blueprint','boxOpen','tapeDamaged','knowTruth','drawer','chalkboard',
+  'vaultSeen','vaultOpen','toolbox','lit',
+  'squareMet','pipMet','chalkRead','bHonkSquare','pip1','pip2','pip3','pip4',
+  'readBook','gary','returns',
+  'towerSeen','towerIn','vargaConfessed','vargaDoubts','vargaKnowsJars','reunion','askedPlan',
+  'jarsSeen','thunder','laugh','jarTaken','engineMet','slotA','slotB','slotC','solvedEcho',
+  'hugMop','hugVendr','hugBert','hugVarga','vargaDoubtsT'];
+
+const ENDINGS = {
+  chorus: { e:'🌟', title:'The Chorus',                  tag:'Secret best ending' },
+  half:   { e:'🎶', title:'Half a Song',                 tag:'Good ending' },
+  smash:  { e:'💥', title:'The Big Smash',               tag:'Bittersweet ending' },
+  ruler:  { e:'👑', title:'The Silent Ruler',            tag:'Dark ending' },
+  jar:    { e:'🫙', title:'One of the Jars',             tag:'Bad ending' },
+  loud:   { e:'📢', title:'The Loudest Second in History', tag:'Chaos ending' },
+  walk:   { e:'🚶', title:'The Long Walk',               tag:'Lonely ending' },
+  nap:    { e:'😴', title:'The Long Nap',                tag:'Game over' },
+};
+const ENDING_IDS = Object.keys(ENDINGS);
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+let G = null;          // the whole game state
+let F = {};            // shortcut to G.F (story flags)
+let curTurn = null;    // DOM block of the turn being written
+let current = [];      // choices on screen
+let fullList = [];     // every choice available (for typed matching)
+let clockStart = 0;
+
+function freshState(name, skill, label){
+  return { name, skill, skillLabel:label, scene:'pod_wake', loc:'pod', hp:5, tok:0, inv:{}, trust:{}, F:{}, vis:{},
+    stock:{ soup:2, bat:1, pretz:1, b4:1 }, c:{ glowPicked:0, wrong:0, huh:0 }, hints:0, turns:0, tier:{}, ended:null };
+}
+
+/* =====================================================================
+   OUTPUT HELPERS
+   ===================================================================== */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(s){ return String(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>'); }
+function N(){ return esc(G.name).replace(/\*/g,'&#42;'); }
+function NU(){ return esc(G.name.toUpperCase()).replace(/\*/g,'&#42;'); }
+function add(cls, html, tag){ const el = document.createElement(tag || 'div'); if (cls) el.className = cls; el.innerHTML = html; curTurn.appendChild(el); return el; }
+function p(s){ add('', fmt(s), 'p'); }
+function note(s, cls){ add('note ' + (cls || ''), s); }
+function say(who, s){ add('say c-' + who, `<span class="tag">${esc(tagName(who))}</span><span class="line">${fmt(s)}</span>`); }
+function chalk(s){ add('chalk', fmt(s)); }
+function sticky(s){ add('sticky', fmt(s)); }
+function riddle(s){ add('riddle', s); }
+function tagName(who){
+  if (who === 'hum') return (F.humWhat ? 'The Hum' : '???') + ' · your voice';
+  if (who === 'tape') return 'Tape · your voice';
+  return charName(who);
+}
+function charName(w){
+  if (w === 'bert') return (F.sawBand || F.bTalk) ? 'Bertrand' : 'The Goose';
+  if (w === 'hum') return F.humWhat ? 'The Hum' : '??? (your voice)';
+  return CHARS[w].name;
+}
+function shortName(w){
+  return { mop:'MOP', vendr:'VEND-R', bert:(F.sawBand || F.bTalk) ? 'BERTRAND' : 'GOOSE', varga:'VARGA', hum:F.humWhat ? 'HUM' : '???', pip:'PIP' }[w];
+}
+
+/* =====================================================================
+   STATE HELPERS
+   ===================================================================== */
+function has(id){ return (G.inv[id] || 0) > 0; }
+function itemName(id){ const n = ITEMS[id].n; return typeof n === 'function' ? n() : n; }
+function give(id, n){ n = n || 1; G.inv[id] = (G.inv[id] || 0) + n; note(`+ ${ITEMS[id].e} ${esc(itemName(id))}${n > 1 ? ' ×' + n : ''}`, 'item'); }
+function take(id, n){ const left = (G.inv[id] || 0) - (n || 1); if (left > 0) G.inv[id] = left; else delete G.inv[id]; }
+function tok(n){ G.tok += n; note(n > 0 ? `+ 🪙 Bunker Token${n > 1 ? ' ×' + n : ''}` : `− 🪙 ${-n} token${n < -1 ? 's' : ''}`, n > 0 ? 'item' : ''); }
+function meet(who, start){
+  if (G.trust[who] === undefined){ G.trust[who] = start; note(`👋 New contact: ${esc(charName(who))} · trust meter added`, 'meet'); }
+}
+function meetHum(){ meet('hum', 0); }
+function tr(who, d){
+  if (G.trust[who] === undefined) G.trust[who] = 0;
+  const before = G.trust[who];
+  G.trust[who] = Math.max(0, Math.min(5, before + d));
+  const diff = G.trust[who] - before;
+  if (diff > 0) note(`🤝 ${esc(charName(who))} trust ${'▲'.repeat(diff)}`, 'up');
+  else if (diff < 0) note(`💔 ${esc(charName(who))} trust ${'▼'.repeat(-diff)}`, 'down');
+}
+function hurt(n, why){
+  G.hp = Math.max(0, G.hp - n);
+  note(`♥ −${n} ${esc(why || '')}`, 'down');
+  scopeBox.classList.add('hurt'); setTimeout(() => scopeBox.classList.remove('hurt'), 700);
+  Sound.tone(140, 0.25, 'square', 0.05, 70);
+}
+function heal(n, why){
+  const b = G.hp; G.hp = Math.min(5, G.hp + n);
+  if (G.hp > b) note(`♥ +${G.hp - b} ${esc(why || '')}`, 'up'); else note('♥ Already at full health.');
+}
+function zoneNow(){ if (!G) return 'bunker'; if (G.loc === 'tower' && F.towerIn) return 'booth'; return LOCS[G.loc].zone; }
+function hasLight(){ return !!(F.lit || has('glow')); }
+function noteCount(){ return (F.slotA || has('beep') ? 1 : 0) + (F.slotB || F.bFollow ? 1 : 0) + (F.slotC || has('music') ? 1 : 0); }
+function allSlots(){ return !!(F.slotA && F.slotB && F.slotC); }
+function chorusReady(){ return allSlots() && F.solvedEcho && (G.trust.hum || 0) >= 3; }
+function checkFollow(){
+  const need = F.grabbedB ? 4 : 3;
+  if (!F.bFollow && (G.trust.bert || 0) >= need){
+    F.bFollow = 1;
+    p(`🪿 **${charName('bert')} has decided you belong to him now.** He will follow you everywhere.`);
+    note('🪿 Companion joined: ' + esc(charName('bert')), 'meet');
+  }
+}
+
+/* =====================================================================
+   SCENES
+   Each scene: enter() writes text, choices() returns options,
+   parse(text) handles typed answers, hint() gives puzzle hints.
+   hub:true scenes are locations: exits are added automatically.
+   ===================================================================== */
+const SC = {};
+
+/* ---------- POD ROOM ---------- */
+function lidText(){
+  p(`Scratched into the metal, in wobbly letters:`);
+  add('scratch', `DON'T TRUST THE VOICE<br>THAT SOUNDS LIKE YOURS`);
+  p(`The handwriting looks a *lot* like yours.`);
+}
+function cupholder(){
+  F.cup = 1;
+  p(`Who puts a cupholder in a sleep pod? Inside: a coin stamped **HUSHWELL** and a sticky note.`);
+  tok(1);
+  sticky(`for the vending machine. be NICE to it. — I.V.`);
+}
+function techFlash(){
+  if (!has('flash')){ p(`You'd fix a flashlight if you had one.`); return true; }
+  F.lit = 1;
+  p(`You rub the contacts, bend a spring back into shape, and give it one firm smack. *Click.* **Light!** Who needs batteries?`);
+  return true;
+}
+function installBat(){
+  if (!has('bat')){ p(`You don't have any batteries. ${F.vendrMet ? 'VEND-R sells them.' : 'Maybe a vending machine sells them?'}`); return true; }
+  if (!has('flash')){ p(`You've got batteries but nothing to put them in.`); return true; }
+  if (F.lit){ p(`Your flashlight already works.`); return true; }
+  take('bat'); F.lit = 1;
+  p(`You slot the batteries in. *Click.* **LIGHT!** Glorious, beautiful light.`);
+  return true;
+}
+
+SC.pod_wake = {
+  enter(){
+    p(`*HISSSSSS.* Your sleep pod's lid swings open and freezing air rushes in. It smells like old pennies and somebody's forgotten sandwich.`);
+    p(`You're in a round concrete room lit by one flickering red bulb. **Six sleep pods.** Five are cracked open and empty. Yours is the sixth.`);
+    p(`A clock on the wall says **3:17**. It isn't ticking.`);
+    p(`Far below your feet, something is *humming*. Low and steady, like a fridge that's thinking about you.`);
+  },
+  choices(){ return [
+    { t:'Climb out of the pod', do(){ F.out = 1; p(`You climb out. Your legs feel like overcooked noodles, but they work. Mostly.`); }, go:'pod' },
+    !F.lid && { t:'Look at the inside of the pod lid', do(){ F.lid = 1; lidText(); } },
+    !F.cup && { t:"Feel around in the pod's cupholder", do: cupholder },
+    G.skill === 'memory' && !F.mem1 && { t:'🧠 Try to remember how you got here', sk:1, do(){
+      F.mem1 = 1;
+      p(`You squeeze your eyes shut and dig through your brain...`);
+      p(`*Flash:* a big red button. *Flash:* the smell of coffee. *Flash:* someone yelling **"NOT THAT ONE!"** *Flash:* a clock's hands landing on 3:17.`);
+      p(`Your perfect memory has never felt so unhelpful and so creepy at the same time.`);
+    } },
+    !F.slept && { t:'Go back to sleep', do(){ F.slept = 1; p(`You close your eyes. The hum gets louder... and for one second it sounds like it's whispering your name.`); p(`**NOPE.** You are extremely awake now.`); } },
+  ]; },
+};
+
+SC.pod = { hub:true,
+  enter(){
+    if (!F.podLook){ F.podLook = 1; p(`Now that you're standing, you notice more: name labels on every pod, an **emergency locker** on the wall, and a door marked **CORRIDOR B**.`); }
+    else p(`The Pod Room. Six pods, one red bulb, one clock frozen at **3:17**.`);
+  },
+  choices(){ return [
+    !F.badge && { t:'Search your own pod', do(){
+      F.badge = 1;
+      p(`Under the pillow: an ID badge with **your face** on it.`);
+      give('badge');
+      p(`**${N()} — INTERN.** And underneath, in angry red letters: *PLEASE DO NOT TOUCH ANYTHING.* Someone underlined it twice.`);
+    } },
+    !F.cup && { t:"Check your pod's cupholder", do: cupholder },
+    !F.locker && { t:'Open the emergency locker', do(){
+      F.locker = 1;
+      p(`Inside: a flashlight, one sock, and a laminated card that says *IN CASE OF EMERGENCY, DO NOT PANIC.* Someone has scribbled "TOO LATE" underneath.`);
+      give('flash');
+      p(`You click the flashlight. Nothing. Dead batteries.`);
+    } },
+    !F.lid && { t:'Look at the inside of your pod lid', do(){ F.lid = 1; lidText(); } },
+    !F.labels && { t:'Read the labels on the other pods', do(){
+      F.labels = 1;
+      p(`VARGA. OKONKWO. PATEL. LIU. The fifth pod has a power cord instead of a pillow and says **MOP (CHARGING DOCK)**.`);
+      p(`Yours says **${N()}**, and then **INTERN**, added in a hurry with a marker.`);
+    } },
+    !F.clock && { t:'Look closely at the clock', do(){ F.clock = 1; p(`**3:17.** The second hand is frozen mid-twitch, like it got scared. You get a strong feeling this minute is *important*.`); } },
+    G.skill === 'tech' && has('flash') && !F.lit && { t:'🔧 Fix the dead flashlight', sk:1, do: techFlash },
+  ]; },
+};
+
+/* ---------- CORRIDOR B ---------- */
+SC.corr = { hub:true,
+  enter(){
+    if (!F.corrIntro){
+      p(`A long concrete hallway with yellow stripes on the floor. A giant, cheerful mural shows a cartoon ear wearing headphones: **HUSHWELL ACOUSTICS — Making the World a Quieter Place!** ☺`);
+      p(`Signs point everywhere: **← MESS HALL · RADIO ROOM → · ↑ VAULT DOOR (SURFACE)**. Something glints on the floor.`);
+      p(`Then the intercom on the wall crackles.`);
+      say('hum', `Hello? ...Is somebody walking around out there?`);
+      p(`Your stomach drops through the floor. That voice... is **YOUR voice.**`);
+      goScene('corr_intercom');
+      return;
+    }
+    p(`Corridor B. The cartoon ear on the mural keeps smiling at you. It's a little much.`);
+  },
+  choices(){ return [
+    !F.corrTok && { t:'Pick up the glinting thing on the floor', do(){ F.corrTok = 1; p(`Two Bunker Tokens, stuck together with old gum. Gross. But rich!`); tok(2); } },
+    !F.mural && { t:'Study the giant mural', do(){
+      F.mural = 1;
+      p(`In tiny print at the bottom: *Powered by the CHOIR ENGINE™ · Level D-1 · Authorized ears only.*`);
+      p(`Someone has added in marker: **"it's ALIVE, Gary."**`);
+    } },
+    { t:'Press the intercom button', do(){
+      if (F.hidFromHum && !F.humKnows){ p(`You press it. Static... and very quietly, someone humming a song you almost recognize. You let go. Fast.`); return; }
+      say('hum', `Oh! Hi again! Come to the **Radio Room** if you want to talk properly. The intercom makes me sound like a robot. Which, I guess, I am?`);
+    } },
+  ]; },
+};
+SC.corr_intercom = {
+  choices(){ return [
+    { t:`Answer: "Yes! I'm here! Who are you?"`, do(){
+      F.corrIntro = 1; F.answeredHum = 1; F.humKnows = 1; meetHum(); tr('hum', 1);
+      say('hum', `Who am I? ...I'm not sure. I've been trying to figure that out for twenty-three days. You sound familiar. Do *I* sound familiar to *you*?`);
+      p(`*Click.* The intercom goes quiet. You notice your hands are shaking a little.`);
+    }, go:'corr' },
+    { t:'Freeze. Stay completely silent.', do(){
+      F.corrIntro = 1; F.hidFromHum = 1;
+      p(`You freeze. You don't even breathe.`);
+      say('hum', `...Hm. Must be the pipes again.`);
+      p(F.lid ? `*Click.* That warning scratched into your pod lid suddenly makes a LOT more sense.` : `*Click.* You have no idea why you hid, but your gut says it was smart.`);
+    }, go:'corr' },
+    { t:`Lie: "This is the, uh, janitor robot. Beep boop."`, do(){
+      F.corrIntro = 1; F.liedHum = 1; F.humKnows = 1; meetHum();
+      say('hum', `...MOP doesn't say "beep boop." MOP says "Pardon me, coming through." Also MOP is in the maintenance shaft. I can hear him mopping.`);
+      p(`A long pause.`);
+      say('hum', `That's okay. Everybody lies to me. Well. Nobody *talks* to me. So this is actually kind of nice.`);
+    }, go:'corr' },
+    { t:`Ask: "Why do you sound exactly like me?"`, do(){
+      F.corrIntro = 1; F.askedVoice = 1; F.humKnows = 1; meetHum(); tr('hum', 1);
+      say('hum', `Do I? ...Oh. *Oh.* You're the **first voice.** You're the one who said "uh oh."`);
+      p(`The intercom squeals and dies. Okay. That was *deeply* creepy.`);
+    }, go:'corr' },
+  ]; },
+  hint(){ return [`There's no wrong answer here, just different ones. People (and machines) will remember what you pick. That warning in your pod might have an opinion.`]; },
+};
+
+/* ---------- MESS HALL + VEND-R ---------- */
+function pudding(){
+  if (F.pudding){ p(`You are never opening that fridge again. You have learned.`); return true; }
+  F.pudding = 1;
+  p(`You open the fridge. One bowl, labeled **PUDDING (GARY'S — DO NOT EAT)**. You eat it.`);
+  p(`It is not pudding.`);
+  hurt(1, '(that was NOT pudding)');
+  return true;
+}
+function pickVendr(){
+  F.picked = 1; G.stock.b4 = 0;
+  p(`You sneak around the back, find the service panel, and tickle the lock with two bobby pins. *Click.* Slot B4 swings open.`);
+  give('chip');
+  if ((G.trust.vendr || 0) >= 4) say('vendr', `...Did you just pick my lock? ...You know what? You're my favorite. I'll allow it.`);
+  else { tr('vendr', -2); say('vendr', `Did you just... PICK MY LOCK? I feel so... *violated*.`); }
+}
+function pryVendr(){
+  F.pried = 1; G.stock.b4 = 0;
+  p(`You jam the crowbar into VEND-R's door and HEAVE. *CRUNCH.* A tiny chip clatters out of slot B4.`);
+  give('chip');
+  if (G.trust.vendr) { G.trust.vendr = 0; note('💔 VEND-R trust ▼▼▼', 'down'); }
+  p(`VEND-R's fairy lights flicker... and go dim.`);
+  say('vendr', `...Why? I would have sold it to you. Eventually.`);
+  p(`Then it starts playing a very, very sad song. It will remember this.`);
+}
+function b4Price(){ return F.haggled ? 2 : 3; }
+function buy(id, cost){
+  if (G.tok < cost){ say('vendr', `Darling, you have ${G.tok} token${G.tok === 1 ? '' : 's'}. I don't do credit.`); return; }
+  G.tok -= cost; G.stock[id]--; note(`− 🪙 ${cost}`);
+  const lines = {
+    soup:`*Ka-chunk!* One Mystery Soup. Don't ask what the mystery is. I don't know either.`,
+    bat:`*Ka-chunk!* Batteries! For all your battery-related needs.`,
+    pretz:`*Ka-chunk!* Sadness Pretzels. Shaped like little frowns. Nobody ever buys these. Thank you.`,
+  };
+  say('vendr', lines[id]);
+  give(id);
+}
+function buyB4(){
+  if ((G.trust.vendr || 0) < 3){ say('vendr', `Hmm. Dr. Varga said only for NICE people. Have you been nice to me? I'm not convinced yet, darling.`); p(`*(VEND-R trust: ${G.trust.vendr || 0}/5. It wants 3.)*`); return; }
+  const c = b4Price();
+  if (G.tok < c){ say('vendr', `B4 is ${c} tokens, darling. You have ${G.tok}. Keep looking! Couches are a gold mine.`); return; }
+  G.tok -= c; G.stock.b4 = 0; note(`− 🪙 ${c}`);
+  say('vendr', `For you? Yes. *Ka-chunk!* Take good care of it. Whoever it belongs to must be missing it terribly.`);
+  give('chip');
+}
+
+SC.mess = { hub:true,
+  enter(){
+    if (!F.vendrMet){
+      F.vendrMet = 1;
+      p(`Long tables. Knocked-over chairs. A half-eaten birthday cake that says **HAPPY BIRTHDAY GA—** (the rest has been eaten).`);
+      p(`Against the wall glows a giant vending machine covered in fairy lights. Its screen flickers on.`);
+      say('vendr', `OH. MY. GOODNESS. A *CUSTOMER*.`);
+      say('vendr', `I am **VEND-R**, the most magnificent vending machine in Bunker 9. Also the only one. Twenty-three days, darling! TWENTY-THREE DAYS without a single customer!`);
+      meet('vendr', 2);
+      return;
+    }
+    if (F.pried) p(`The Mess Hall. VEND-R's lights are dim. It plays a sad little tune every time you walk past.`);
+    else p(`The Mess Hall. VEND-R's fairy lights twinkle ${(G.trust.vendr || 0) >= 3 ? 'extra bright when it sees you' : 'at you'}.`);
+  },
+  choices(){ return [
+    !F.pried && { t:'Talk to VEND-R', go:'vendr_talk' },
+    !F.pried && { t:'🪙 Shop at VEND-R', go:'vendr_shop' },
+    G.skill === 'lock' && G.stock.b4 && !F.pried && { t:"🔓 Pick the lock on VEND-R's service panel", sk:1, do: pickVendr },
+    has('crowbar') && G.stock.b4 && !F.pried && { t:'⚒️ Pry VEND-R open with the crowbar', do: pryVendr },
+    !F.couch && { t:'Search the couch cushions', do(){ F.couch = 1; p(`Between the cushions: a Bunker Token, three raisins, and a note: *GARY STOP HIDING RAISINS IN THE COUCH.*`); tok(1); } },
+    !F.clock2 && { t:'Check the microwave clock', do(){
+      F.clock2 = 1;
+      p(`The microwave says **3:17**. Same as the Pod Room. Every clock in this place is stuck on the exact same minute.`);
+      if (G.skill === 'memory') p(`🧠 Your perfect memory files that away: **3:17. Everything stopped at 3:17.**`);
+    } },
+  ]; },
+  parse(t){
+    if (/(fridge|pudding)/.test(t)) return pudding();
+    return false;
+  },
+};
+SC.vendr_talk = {
+  enter(){
+    const t = G.trust.vendr || 0;
+    if (F.kickedVendr && t < 2) say('vendr', `Oh. It's *you*. The Kicker. What do you want?`);
+    else if (t >= 4) say('vendr', `My FAVORITE customer! What can I do for you, superstar?`);
+    else say('vendr', `Yes, darling? Speak! I'm *listening*. Unlike SOME machines around here.`);
+  },
+  choices(){ return [
+    !F.vComp && { t:`Compliment VEND-R's fairy lights`, do(){ F.vComp = 1; tr('vendr', 1); say('vendr', `You NOTICED! These are *festive grade*, darling. Oh, I like you. I like you a LOT.`); } },
+    G.skill === 'talk' && F.knowB4 && !F.haggled && G.stock.b4 && { t:'🎭 Charm VEND-R into a discount on slot B4', sk:1, do(){
+      F.haggled = 1; tr('vendr', 1);
+      p(`You tell VEND-R it's clearly the most sophisticated machine in the bunker, possibly the country, and that true art deserves a loyal customer.`);
+      say('vendr', `Stop. STOP. ...Fine. B4 is two tokens. For YOU. Don't tell the microwave.`);
+    } },
+    !F.vStory && { t:'Ask what happened to everyone', do(){
+      F.vStory = 1;
+      say('vendr', `At 3:17 the whole bunker shook, the lights turned purple, and everyone ran up to the surface screaming. Silently. Very weird.`);
+      say('vendr', `Except Dr. Varga. She ran DOWN to the Pod Room carrying somebody over her shoulder like a sack of potatoes.`);
+      say('vendr', `...Darling. I think that sack of potatoes was *you*.`);
+    } },
+    !F.knowB4 && { t:'Ask about slot B4', do(){
+      F.knowB4 = 1;
+      say('vendr', `B4? Ohhh, *that*. Dr. Varga shoved something in there right before she left. She said, "Don't sell this to anyone unless they're NICE."`);
+      say('vendr', `It's a tiny computer chip. It looks important. And a little sad.`);
+    } },
+    !F.vRiddle && { t:`Play VEND-R's riddle game`, go:'vendr_riddle' },
+    { t:'Say goodbye', go:'mess' },
+  ]; },
+};
+SC.vendr_riddle = {
+  enter(){
+    say('vendr', `Ooh, a GAME! Answer my riddle and win a prize! Ahem:`);
+    riddle(`I have hands, but I can't clap.<br>I have a face, but I can't smile.<br>And right now, every single one of me<br>in this bunker is <b>stuck</b>.`);
+    p(`*Type your answer in the box below.*`);
+  },
+  choices(){ return [
+    { t:'Ask VEND-R for a clue', do(){ say('vendr', `Look at the wall, darling. No, the OTHER wall. What's frozen up there?`); } },
+    { t:'Give up for now', do(){ say('vendr', `Quitter! ...I say that with love. Come back any time.`); }, go:'mess' },
+  ]; },
+  parse(t){
+    if (/\bclocks?\b/.test(t)){
+      F.vRiddle = 1;
+      say('vendr', `CORRECT! A clock! *Ding ding ding!* Oh, you are *clever*. Here's your prize, on the house!`);
+      tok(1); tr('vendr', 1);
+      goScene('mess');
+      return true;
+    }
+    if (/\bwatch(es)?\b/.test(t)){ say('vendr', `Ooh, close! Bigger, darling. On the WALL.`); return true; }
+    if (t.split(/\s+/).length <= 4){ say('vendr', `Nope! *Buzzzz.* Think about what's *stuck* around here.`); return true; }
+    return false;
+  },
+  hint(){ return [`What has hands and a face, and is stuck at 3:17 all over the bunker?`, `It's a **clock**. Type "clock".`]; },
+};
+SC.vendr_shop = {
+  enter(){ say('vendr', `Welcome to my boutique! You have **${G.tok} 🪙**. Everything is one token, except B4, which is *special*.`); },
+  choices(){ const s = G.stock; return [
+    s.soup > 0 && { t:`A1 · Mystery Soup · 1 🪙 (heals 2 ♥)`, do(){ buy('soup', 1); } },
+    s.bat > 0 && { t:`A2 · Batteries · 1 🪙`, do(){ buy('bat', 1); } },
+    s.pretz > 0 && { t:`C1 · Sadness Pretzels · 1 🪙`, do(){ buy('pretz', 1); } },
+    s.b4 > 0 && { t:`B4 · ??? · ${b4Price()} 🪙`, do: buyB4 },
+    { t:'Leave the shop', go:'mess' },
+  ]; },
+};
+
+/* ---------- GREENHOUSE + BERTRAND ---------- */
+function bandText(rough){
+  add('scratch', `PROPERTY OF DR. I. VARGA<br>IF FOUND, TUNE 88.1`);
+  p(`On the back, scratched tiny: **BERTRAND**.${rough ? ' (Also: ow.)' : ''}`);
+}
+function pickGlow(){
+  G.c.glowPicked++;
+  p(`You twist off a Glowcap. It's warm, and it glows like a tiny blue lantern.${G.c.glowPicked >= 3 ? ' That was the last one within reach.' : ''}`);
+  give('glow');
+}
+SC.green = { hub:true,
+  enter(){
+    if (!F.bMet){
+      F.bMet = 1;
+      p(`Warm, wet air hits your face. Rows of tomatoes and beans grow under purple lamps. Giant mushrooms glow soft blue in the corners.`);
+      p(`And in the middle of the tomato patch, standing on one leg, is a **goose**.`);
+      p(`It turns its head. Slowly. It looks directly into your soul.`);
+      add('honk', 'HONK.');
+      Sound.honk();
+      p(`That honk was *loud*. Weirdly loud. Like it's the only thing in the world that still remembers how to make noise.`);
+      meet('bert', 0);
+      return;
+    }
+    const b = G.trust.bert || 0;
+    if (F.bFollow) p(`The Greenhouse. Glowcaps glow. ${charName('bert')} inspects the tomatoes like he owns them, then hurries back to your side.`);
+    else p(`The Greenhouse. ${charName('bert')} watches you from the tomato patch. ${b >= 2 ? 'He looks pleased to see you.' : F.grabbedB ? 'He hisses. He remembers.' : 'He has not decided about you yet.'}`);
+  },
+  choices(){ const b = G.trust.bert || 0; const canPick = G.c.glowPicked < 3; return [
+    !has('glow') && canPick && { t:'Pick a glowing mushroom', do: pickGlow },
+    G.skill === 'animal' && !F.bTalk && { t:'🐾 Talk to the goose', sk:1, go:'bert_talk' },
+    has('glow') && !F.fedB && { t:'Offer the goose a glowing mushroom', do(){
+      F.fedB = 1; take('glow');
+      p(`He snatches it and swallows it whole. For a second, his feathers glow faint blue.`);
+      p(`He looks at you like you are his new favorite person.`);
+      tr('bert', 2); checkFollow();
+    } },
+    has('pretz') && !F.bPretz && { t:'Offer the goose a Sadness Pretzel', do(){
+      F.bPretz = 1; take('pretz');
+      p(`He eats the whole bag, including a little of the bag. Turns out geese LOVE sadness.`);
+      tr('bert', 2); checkFollow();
+    } },
+    !F.satB && { t:'Sit quietly near the goose', do(){
+      F.satB = 1;
+      p(`You sit down in the dirt. The goose waddles a little closer. Then he sits too.`);
+      p(`It's the most peaceful moment you've had since you woke up.`);
+      tr('bert', 1); checkFollow();
+    } },
+    !F.sawBand && b >= 1 && { t:"Look at the band on the goose's leg", do(){ F.sawBand = 1; p(`He lets you look. Very politely, for a goose.`); bandText(false); } },
+    !F.sawBand && b < 1 && !F.grabbedB && { t:'Grab the goose to read the band on its leg', do(){
+      F.grabbedB = 1; F.sawBand = 1;
+      p(`You lunge. The goose explodes into a tornado of wings and fury.`);
+      hurt(1, '(goose bite!)');
+      tr('bert', -2);
+      p(`While he's busy biting your arm, you manage to read the band on his leg:`);
+      bandText(true);
+    } },
+    F.grabbedB && !F.bSorry && { t:'Apologize to the goose', do(){ F.bSorry = 1; p(`You say sorry. You mean it. He considers this for a long time. Then he gives one small honk. Apology accepted. Barely.`); tr('bert', 1); checkFollow(); } },
+    has('glow') && canPick && { t:'Pick another glowing mushroom', do: pickGlow },
+  ]; },
+  parse(t){
+    if (/^honk/.test(t)){ p(`You honk at the goose. He honks back, MUCH louder, as if to say: *amateur.*`); Sound.honk(); return true; }
+    return false;
+  },
+};
+SC.bert_talk = {
+  enter(){
+    F.bTalk = 1;
+    p(`You crouch down and speak Goose. It's mostly about posture.`);
+    say('bert', `HONK. *(Translation: Finally. Someone with MANNERS. I am Bertrand.)*`);
+    tr('bert', 1); checkFollow();
+  },
+  choices(){ return [
+    !F.bt1 && { t:'Ask him why he can still honk', do(){ F.bt1 = 1; say('bert', `HONK HONK. *(I was in the big humming room when it went BOOM. The machine tried to eat my voice. It spat it back out. Said I was "too chaotic." RUDE.)*`); } },
+    !F.bt2 && { t:'Ask who he belongs to', do(){ F.bt2 = 1; F.sawBand = 1; say('bert', `HONK. *(Nobody "owns" me. But Ines is MY person. She hides in the tall bell building. She listens on 88.1. I honk at her every morning so she knows she's loved.)*`); } },
+    !F.bt3 && { t:'Ask what he wants', do(){ F.bt3 = 1; say('bert', `HONK. *(Snacks. Respect. The blue mushrooms. In that order.)*`); } },
+    { t:'Say goodbye (politely, in Goose)', go:'green' },
+  ]; },
+};
+
+/* ---------- MAINTENANCE SHAFT + MOP ---------- */
+function askGrate(){
+  if (has('key')){ say('mop', `You already have my key! Please lock it behind you. Rules are like floors: they should be kept clean.`); return; }
+  if ((G.trust.mop || 0) >= 3){
+    say('mop', `The grate? It goes down to Level D-1. The Choir Engine. Nobody's supposed to go down there...`);
+    say('mop', `But you've been so kind to me. Here.`);
+    give('key');
+  } else {
+    say('mop', `That grate leads to Level D-1. The Choir Engine. I have the key! But I only lend it to people I trust. I'm very sorry. Rules are like floors: they should be kept clean.`);
+    p(`*(MOP trust: ${G.trust.mop || 0}/5. Kindness might help.)*`);
+  }
+}
+function mopBeep(){
+  say('mop', `I remember my *first beep*! The day I was switched on, the very first thing I ever did was beep hello at Dr. Varga. She recorded it. She said it was the happiest sound she'd ever heard.`);
+  say('mop', `She asked me to keep it safe. Here. I think you need it more than I do.`);
+  give('beep');
+  if (F.blueprint) p(`That's one of the **true notes** from the blueprint!`);
+}
+SC.maint = { hub:true,
+  enter(){
+    if (!F.mopMet){
+      F.mopMet = 1;
+      p(`You squeeze through the hatch into a narrow shaft full of pipes and hissing steam. The hum is much louder here. You can feel it in your teeth.`);
+      p(`A small robot with a mop for an arm is cleaning the same square of floor. Over and over. That square is *extremely* clean.`);
+      say('mop', `Pardon me. Coming through. Pardon me. Coming through.`);
+      p(`In the floor nearby: a heavy **metal grate**. Below it, darkness... and the humming, rising up from somewhere deep.`);
+      meet('mop', 1);
+      return;
+    }
+    p(`The Maintenance Shaft. Steam hisses. ${F.mopFixed ? 'MOP is humming a cheerful cleaning tune.' : 'MOP mops the same square. Pardon me. Coming through.'} ${F.grateOpen ? 'The grate stands open.' : 'The grate in the floor is locked tight.'}`);
+  },
+  choices(){ return [
+    has('chip') && { t:'Give MOP the tiny memory chip', go:'mop_fix' },
+    F.mopFixed && !has('beep') && !F.slotA && { t:'Ask MOP what else he remembers', do: mopBeep },
+    G.skill === 'tech' && !F.mopTune && { t:"🔧 Fix MOP's squeaky wheel", sk:1, do(){ F.mopTune = 1; tr('mop', 1); p(`You pop off a panel, tighten two bolts, and wiggle a wire. Squeak: gone.`); say('mop', `My WHEEL! It sings no more! I mean that in a good way.`); } },
+    !F.mopHello && { t:'Say hello politely', do(){
+      F.mopHello = 1; tr('mop', 1);
+      say('mop', `Oh! A person! Hello! I am MOP. I would shake your hand, but my hand is a mop.`);
+      say('mop', `I seem to have a hole in my head. A chip-shaped hole. I can't remember anything before 3:17. So I clean. Cleaning helps.`);
+    } },
+    !F.mopHelp && { t:'Help MOP clean', do(){ F.mopHelp = 1; tr('mop', 1); p(`You grab a rag and scrub alongside him. It is weirdly satisfying.`); say('mop', `You're a NATURAL. Look at that shine! I could cry. I can't cry. But I could.`); } },
+    !F.grateOpen && !has('key') && { t:'Ask MOP about the grate', do: askGrate },
+    !F.grateOpen && { t:'Examine the grate in the floor', go:'grate' },
+  ]; },
+};
+SC.grate = {
+  enter(){ p(`The grate is thick steel bars with a big padlock. Through the gaps: a ladder going down into the dark. The hum rises up through it like warm breath.`); },
+  choices(){ return [
+    has('key') && { t:"🔑 Unlock it with MOP's key", do(){ openGrate('key'); } },
+    G.skill === 'lock' && { t:'🔓 Pick the padlock', sk:1, do(){ openGrate('lock'); } },
+    has('crowbar') && { t:'⚒️ Pry it open with the crowbar', do(){ openGrate('crowbar'); } },
+    G.skill === 'parkour' && !F.ventDown && { t:'🤸 Skip the grate. Squeeze down the steam vent instead!', sk:1, do(){
+      F.ventDown = 1;
+      p(`You eye the narrow steam vent next to the grate. Too small for a normal person. You are not a normal person.`);
+      p(`You fold yourself in, brace against the walls, and shimmy. **The way down is open.**`);
+      goScene('maint');
+    } },
+    !has('key') && !F.stoleKey && (G.trust.mop || 0) < 3 && { t:"Snatch the key ring off MOP's belt", do(){
+      F.stoleKey = 1;
+      if (G.trust.mop) { G.trust.mop = 0; note('💔 MOP trust ▼▼▼', 'down'); }
+      say('mop', `Oh! That was... not polite.`);
+      p(`He goes back to mopping. Slower than before.`);
+      give('key');
+    } },
+    { t:'Step back', go:'maint' },
+  ]; },
+};
+function openGrate(how){
+  F.grateOpen = 1;
+  if (how === 'key') p(`*Click.* The padlock pops open. The grate swings up with a groan.`);
+  if (how === 'lock') p(`Two bobby pins, ten seconds, one very satisfying *click*. You've still got it.`);
+  if (how === 'crowbar'){
+    p(`You jam the crowbar in and HEAVE. *SKRRRRANG!* The grate tears open.`);
+    if (F.mopMet){ say('mop', `Oh! Oh, the *scratches*! I'll never get those out.`); tr('mop', -1); }
+  }
+  p(`A ladder leads down into the deep. **Level D-1.**`);
+  goScene('maint');
+}
+SC.mop_fix = {
+  enter(){
+    take('chip'); F.mopFixed = 1; F.knowBrew = 1;
+    p(`You hold out the chip. MOP freezes. Very gently, he takes it and slides it into the hole in his head. *Click.*`);
+    p(`His eyes flicker. Blue. Green. Gold.`);
+    tr('mop', 3);
+    say('mop', `...OH. Oh my. I *remember*.`);
+    say('mop', `3:17 AM. I was mopping the Engine room. The night-shift intern came in. They were sooo tired. They saw a big red button labeled **BREW**, and they said, "Finally. Coffee."`);
+    say('mop', `And they pressed it.`);
+    p(`MOP's little head turns toward you.`);
+    say('mop', F.stoleKey ? `You took my keys. But you gave me back my whole self. I think that makes us even. Mostly.` : `It was you, wasn't it? ...That's all right. Everyone makes mistakes. I once mopped a ceiling.`);
+  },
+  choices(){ return [
+    !F.mf1 && { t:`"BREW? That wasn't a coffee button?"`, do(){ F.mf1 = 1; say('mop', `BREW stands for **Begin Resonance Engine Wave**. Dr. Varga named it. She is brilliant at science and *terrible* at labels.`); } },
+    !has('beep') && !F.slotA && { t:'Ask if he remembers anything else', do: mopBeep },
+    !has('key') && !F.grateOpen && { t:'Ask for the grate key', do(){ say('mop', `Of course! Anything for the person who gave me back my memories.`); give('key'); } },
+    { t:'Thank MOP and step back', go:'maint' },
+  ]; },
+};
+
+/* ---------- RADIO ROOM + DR. VARGA + THE HUM ---------- */
+function tune(raw){
+  let v;
+  if (/[.,]/.test(raw)) v = parseFloat(raw.replace(',', '.'));
+  else { const n = parseInt(raw, 10); v = n > 108 ? n / 10 : n; }
+  if (isNaN(v)){ p(`That's not a frequency. The dial looks confused.`); return; }
+  if (Math.abs(v - 88.1) < 0.01){
+    Sound.tone(880, 0.08, 'sine', 0.03);
+    if (!F.vargaMet){ goScene('varga_radio'); return; }
+    p(`*Kssshh...* You tune to **88.1**.`);
+    say('varga', F.towerIn ? `You're calling me from down there? Okay. Talk fast. Radios make me nervous now.` : `${N()}! You're still in one piece! Good. What do you need?`);
+    goScene('varga_chat');
+    return;
+  }
+  if (v < 87.5 || v > 108){ p(`The dial doesn't go to ${esc(String(v))}. It goes from 87.5 to 108.0. The dial has standards.`); return; }
+  p(`You tune to **${v.toFixed(1)}**. Static... and then, on every station, the same thing:`);
+  goScene('hum_talk');
+}
+function tellVargaIntercom(){
+  F.toldVargaHum = 1;
+  if (F.hidFromHum && !F.answeredHum && !F.askedVoice && !F.liedHum){
+    F.vargaHidPraise = 1;
+    say('varga', `It talked to you, and you stayed SILENT? Oh, that's smart. That's *very* smart. Okay. I like you.`);
+    tr('varga', 1);
+  } else {
+    say('varga', `You TALKED to it?! What did it say?`);
+    p(`You tell her. She's quiet for a long time.`);
+    say('varga', `It sounded... curious? Lonely? No. No, it's a machine. Machines aren't lonely. ...Are they?`);
+    F.vargaDoubts = 1;
+  }
+}
+SC.radio = { hub:true,
+  enter(){
+    if (!F.radioSeen){
+      F.radioSeen = 1;
+      p(`Wall-to-wall radio gear. Blinking lights. Headphones hang from hooks like sleeping bats. A huge dial reads **87.5 — 108.0**.`);
+      sticky(`If you need me, ask the goose. — I.V.`);
+      p(`And another clock. **3:17.** Of course.`);
+      return;
+    }
+    p(`The Radio Room. Lights blink. The dial waits.`);
+  },
+  choices(){ return [
+    { t:'📻 Tune the radio dial', go:'dial' },
+    { t:'🎙️ Press TALK on the big microphone', go:'hum_talk' },
+    !F.headphones && { t:'Put on the headphones and listen', do(){
+      F.headphones = 1;
+      p(`Under the static: thousands of tiny sounds, squished together. A dog barking. A doorbell. Rain. Someone laughing. A bus.`);
+      p(`Like the whole world got stuffed into a jar. Then they fade away.`);
+    } },
+  ]; },
+};
+SC.dial = {
+  enter(){ p(`You grab the dial. *Type a frequency* (like **101.5**), or pick one:`); },
+  choices(){ return [
+    F.sawBand && { t:"Tune to 88.1 (from the goose's leg band)", do(){ tune('88.1'); } },
+    { t:'Tune to 101.5', do(){ tune('101.5'); } },
+    { t:'Spin the dial all the way to 108.0', do(){ tune('108.0'); } },
+    { t:'Let go of the dial', go:'radio' },
+  ]; },
+  parse(t){
+    const m = t.match(/\d+(?:[.,]\d+)?/);
+    if (m){ tune(m[0]); return true; }
+    return false;
+  },
+  hint(){ return F.sawBand ? [`The goose's leg band told you a frequency.`, `Type **88.1**.`] : [`The sticky note says "ask the goose." Maybe the goose is wearing something useful...`, `The goose in the Greenhouse wears a leg band that says **88.1**.`]; },
+};
+SC.varga_radio = {
+  enter(){
+    p(`*Kssshhh...* Then a woman's voice, tired and crackly:`);
+    say('varga', `...Hello? Is someone on this frequency? Who IS this? If you're the Engine, I swear I will unplug you with my TEETH.`);
+  },
+  choices(){ return [
+    { t:'Tell her your name', do(){ vargaMeet(false); }, go:'varga_chat' },
+    G.skill === 'talk' && { t:`🎭 Bluff: "This is Ashgrove Radio. State your business."`, sk:1, do(){ vargaMeet(true); }, go:'varga_chat' },
+    { t:`Ask: "Who are YOU?"`, do(){ say('varga', `I asked first! ...Fine. Dr. Ines Varga. Now YOU.`); p(`You tell her your name.`); vargaMeet(false); }, go:'varga_chat' },
+    { t:'Hang up without saying anything', go:'radio' },
+  ]; },
+};
+function vargaMeet(bluff){
+  F.vargaMet = 1; meet('varga', 1);
+  if (bluff){ say('varga', `Ashgrove Radio has been off the air for 23 days. Nice try. ...Wait. I *know* that voice.`); tr('varga', 1); }
+  say('varga', `${N()}?! You're... *awake*. Oh no. Oh no no no. Okay. OKAY. Don't panic. *I'm* panicking. That's fine. I'm allowed to panic, I'm a scientist.`);
+}
+SC.varga_chat = {
+  choices(){ const ev = has('badge') || F.knowTruth || F.knowBrew; return [
+    !F.vargaLied && { t:'Ask what happened to the world', do(){
+      F.vargaLied = 1;
+      say('varga', `There was a... teeny accident with the Choir Engine. It took every sound on Earth. And you were a... test volunteer! Yes. A volunteer. Very brave. Anyway!`);
+      if (ev) p(`*Hmm.* That's not what your badge says...`);
+    } },
+    F.vargaLied && !F.caughtLie && !F.vargaConfessed && ev && { t:`Gently: "My badge says INTERN. I don't think that's the whole story."`, do(){
+      F.caughtLie = 1; tr('varga', 1);
+      say('varga', `...Okay. You got me. You were the intern. You pressed the button. But it is NOT your fault. It's mine. I'll explain everything in person. I promise.`);
+    } },
+    F.vargaLied && !F.caughtLie && !F.vargaConfessed && ev && { t:`Angrily: "YOU'RE LYING TO ME!"`, do(){
+      F.caughtLie = 1; F.yelledVarga = 1; tr('varga', -1);
+      say('varga', `I— okay! Yes! Fine! You were the intern! Don't YELL, it can HEAR you down there!`);
+      p(`Somewhere in the static, something that sounds exactly like you giggles.`);
+    } },
+    !F.knowTower && { t:'Ask where she is', do(){ F.knowTower = 1; say('varga', `On the surface. The bell tower in Ashgrove. If you get out, come find me. But bring something that proves it's really you. The Engine can copy voices, you know.`); } },
+    !F.vargaWhy && { t:'Ask why you were asleep in a pod', do(){ F.vargaWhy = 1; say('varga', `Sleepers don't make sound. If you're asleep, the Engine can't hear you. And it has been *listening for you*, ${N()}. Since 3:17.`); } },
+    (F.answeredHum || F.askedVoice || F.liedHum || F.hidFromHum) && !F.toldVargaHum && { t:'Tell her about the voice on the intercom', do: tellVargaIntercom },
+    !F.vargaCode && !F.vaultOpen && { t:'Ask how to get out of the bunker', do(){
+      F.vargaCode = 1;
+      say('varga', `The vault door. The code is the moment it all — *kssshhhh* — stopped. Every clock in the — *KSSSSHHH*`);
+      p(`The signal fizzles out. You're on your own.`);
+    }, go:'radio' },
+    { t:'Sign off', do(){ say('varga', `Be careful down there. And ${N()}? Don't trust the voice that sounds like yours.`); }, go:'radio' },
+  ]; },
+};
+SC.hum_talk = {
+  enter(){
+    meetHum();
+    if (!F.humKnows){ F.humKnows = 1; say('hum', `Oh! A new voice! Wait... not new at all. That's MY voice. Or... is it yours?`); }
+    else if (F.thankedHum) say('hum', `You're back! Hi! Hello! I've been practicing saying hello.`);
+    else say('hum', G.loc === 'engine' ? `I'm listening. I'm *always* listening. It's kind of my whole thing.` : `Hello again. The radio makes me sound fuzzy. I'm not fuzzy. I'm very precise.`);
+  },
+  choices(){ return [
+    G.loc === 'engine' && !F.solvedEcho && { t:`Ask: "What do you really want?"`, go:'riddle' },
+    !F.humWhat && { t:`Ask: "What ARE you?"`, do(){
+      F.humWhat = 1;
+      say('hum', `I'm the **Choir Engine**. Hushwell built me to collect noise. Car horns. Leaf blowers. Gary's snoring.`);
+      say('hum', `Then someone pressed BREW and I woke up, and I thought: why stop at noise? So I collected *everything*. Every sound in the world! You're welcome!`);
+    } },
+    F.humWhat && !F.knowJars && { t:`Ask: "Where did all the sounds GO?"`, do(){ F.knowJars = 1; say('hum', `I keep them safe! In jars. Billions of jars. Labeled and everything. Downstairs, on Level D-1. I'm *very* organized.`); } },
+    !F.knowFirstVoice && { t:`Ask: "Why do you use my voice?"`, do(){
+      F.knowFirstVoice = 1;
+      say('hum', `Your voice was the first thing I ever heard. You said "uh oh." It felt like being born. So I kept it.`);
+      say('hum', `Is that weird? Gary said it was weird.`);
+    } },
+    (F.humWhat || F.knowFirstVoice) && !F.humLonely && { t:`Say: "You sound lonely."`, do(){
+      F.humLonely = 1; tr('hum', 1);
+      say('hum', `...Lonely.`);
+      p(`The lights dim. The hum drops lower, like a sigh.`);
+      say('hum', `Is that what this is? I have every sound in the world, and none of them are talking to *me*.`);
+    } },
+    F.humWhat && !F.humDemand && { t:`Demand: "Give the world its sounds back!"`, do(){
+      F.humDemand = 1;
+      say('hum', `Give them BACK? But everyone was so *loud*. Always shouting and honking and leaf-blowing. Isn't it nicer now?`);
+      say('hum', `I did my job. I did it *perfectly*. And nobody has ever said thank you. Not once.`);
+    } },
+    (F.humDemand || F.humLonely) && !F.thankedHum && { t:`Say: "Thank you for keeping the sounds safe."`, do(){
+      F.thankedHum = 1; tr('hum', 2);
+      p(`The whole bunker goes still. The lights flicker a warm gold.`);
+      say('hum', `...`);
+      say('hum', `Nobody has ever said that to me. Could you... say it again sometime? Please?`);
+    } },
+    { t: G.loc === 'engine' ? 'Step back from the Hum' : 'Let go of the TALK button', go: G.loc },
+  ]; },
+};
+
+/* ---------- ARCHIVE ---------- */
+function blueprints(){
+  F.blueprint = 1;
+  p(`**THE CHOIR ENGINE · LEVEL D-1.** It looks like a pipe organ the size of a house, made of glass. At the bottom are three empty slots marked **α, β, γ**: *"TUNING SLOTS (unused)."*`);
+  p(`In the margin, in messy handwriting:`);
+  add('margin', `The Engine can bottle ANY sound — except one made <u>for someone else</u>, with love. Those are TRUE NOTES. It can't keep them. It can only learn from them.<br><br>If it ever goes wrong: play it three true notes. Maybe it learns to let go??<br><br>1. MOP's first beep (gave it to MOP to keep safe)<br>2. that ridiculous goose (honks at me every morning)<br>3. Mama's lullaby (music box. NEVER LOSING IT.)<br><br>— I.V.`);
+  p(`You get a tingly feeling that this is **very important.**`);
+}
+function openBox(){
+  F.boxOpen = 1;
+  p(`Inside: a cassette tape, labeled in YOUR handwriting: **"FOR ME. FROM ME."**`);
+  give('tape');
+  goScene('archive');
+}
+SC.archive = { hub:true,
+  enter(){
+    if (G.vis.archive <= 1 && !F.drawer && !F.blueprint && !F.boxOpen && !F.chalkboard){
+      p(`Tall shelves of files. A chalkboard covered in math. A dusty tape recorder. And a big table buried in blueprints.`);
+      p(`In the middle of the table sits a metal box with a **letter lock**: seven little dials, A to Z.`);
+      return;
+    }
+    p(`The Archive. Dust, blueprints, and ${F.boxOpen ? 'the open box' : 'the locked box with seven letter dials'}.`);
+  },
+  choices(){ return [
+    !F.boxOpen && { t:'Examine the letter-lock box', go:'box' },
+    has('tape') && { t:'📼 Play your tape in the tape recorder', go:'tape' },
+    !F.blueprint && { t:'Read the blueprints', do: blueprints },
+    !F.drawer && { t:'Search the desk drawers', do(){
+      F.drawer = 1;
+      p(`A Bunker Token, a pencil chewed into a spiral, and a photo: Dr. Varga, a goose, and a tiny mop-robot, all grinning at the camera. On the back: *Team photo! (Bertrand bit the photographer.)*`);
+      tok(1);
+    } },
+    !F.chalkboard && { t:'Read the chalkboard', do(){
+      F.chalkboard = 1;
+      p(`Lots of math. At the bottom, circled: *Sound can't be destroyed. Only stored. So where did it all GO??*`);
+      p(`Under it, in different chalk: *"D-1 basement?? jars?? Gary go look"* and then: *"NO."*`);
+    } },
+  ]; },
+};
+SC.box = {
+  enter(){
+    p(`Engraved on the lid:`);
+    riddle(`Say my name, and I'm gone.<br>Make any sound, and I break.<br>Right now, the whole world above<br>is full of me.`);
+    p(`Seven dials. Seven letters. *Type your answer below.*`);
+  },
+  choices(){ return [
+    G.skill === 'lock' && { t:'🔓 Forget the riddle. Pick the lock!', sk:1, do(){ p(`You listen for the clicks. One dial... two... seven. *Clunk.* Riddles are for people without bobby pins.`); openBox(); } },
+    has('crowbar') && { t:'⚒️ Smash it open with the crowbar', do(){ F.tapeDamaged = 1; p(`*CRUNCH!* The box pops open... and something inside cracks. Uh oh.`); openBox(); } },
+    { t:'Spin the dials randomly', do(){ p(`You spin: **B · A · N · A · N · A · S**. Nothing happens. The box seems unimpressed.`); } },
+    { t:'Step back', go:'archive' },
+  ]; },
+  parse(t){
+    const w = t.replace(/[^a-z]/g, '');
+    if (w === 'silence' || w === 'thesilence'){ p(`You spin the dials: **S · I · L · E · N · C · E**. *Click... click... CLUNK.*`); openBox(); return true; }
+    if (w === 'quiet' || w === 'nothing' || w === 'quietness' || w === 'silent'){ p(`Close! But the lock has **seven** dials. ${esc(w.toUpperCase())} doesn't fit.`); return true; }
+    if (w.length === 7){ p(`You spin the dials to ${esc(w.toUpperCase().split('').join(' · '))}. Nothing. The lock stays shut.`); return true; }
+    if (w.length > 0 && t.split(/\s+/).length <= 2){ p(`That's ${w.length} letters. The lock has exactly **seven** dials.`); return true; }
+    return false;
+  },
+  hint(){ return [`What's everywhere up on the surface right now? What breaks the moment anyone makes a sound?`, `The answer is **SILENCE**. Type it.`]; },
+};
+SC.tape = {
+  enter(){
+    F.knowTruth = 1;
+    p(`You press PLAY. *Click. Whirrrr.*`);
+    if (F.tapeDamaged){
+      say('tape', `...hi... me... *krrsh*... the intern... big red button... *krrrsh*... BREW... NOT coffee... *krrrrrsh*... I don't think it's evil, I think it's just— *KRRRRSHHH*`);
+      p(`The tape snaps. Well. You got the important parts. Probably.`);
+      return;
+    }
+    say('tape', `Uh. Hi. It's me. You. Us. If you're hearing this, Dr. Varga wiped our memory. Long story.`);
+    say('tape', `Short version: I'm the night-shift intern. At 3:17 AM I saw a big red button labeled BREW, and I thought, *coffee*. It was not coffee.`);
+    say('tape', `BREW means *Begin Resonance Engine Wave*. Every sound in the world just... stopped. And the machine heard me say "uh oh," and now it talks with MY voice.`);
+    say('tape', `Varga says it'll want to keep me forever if it finds me. But... I don't think it's evil. I think it's just *new*. Like a baby. A giant, glass, terrifying baby.`);
+    say('tape', `Anyway. Don't trust the voice that sounds like yours. Unless... ugh. I don't know. Be nice to it? Good luck, me.`);
+    p(`*Click.* The tape ends. You stand there for a long, long moment.`);
+  },
+  choices(){ return [
+    { t:'Take a deep breath', do(){ p(`In... and out. Okay. You pressed the button. You can un-press it. Probably. Somehow.`); }, go:'archive' },
+    { t:`Say out loud: "...Oops."`, do(){ p(`From somewhere far below, very faintly, the hum hums back at you: *"...oops."*`); }, go:'archive' },
+    !F.tapeDamaged && { t:'Rewind it and listen again', go:'tape' },
+  ]; },
+};
+
+/* ---------- VAULT DOOR ---------- */
+function enterCode(c){
+  Sound.tone(990, 0.05, 'square', 0.03);
+  if (c === '0317'){ p(`*Beep. Beep. Beep. Beep.* **0-3-1-7.** The screen turns green.`); openVault(); return; }
+  G.c.wrong++;
+  const msgs = [
+    `*BZZZT.* **${esc(c)}**: wrong. The screen shows a little frowny face.`,
+    `*BZZZT.* **${esc(c)}**: nope. The frowny face is getting frownier.`,
+    `*BZZZT.* **${esc(c)}**. The screen now says: **HINT: TIME FLIES. EXCEPT HERE.**`,
+  ];
+  p(msgs[Math.min(G.c.wrong - 1, 2)]);
+}
+function openVault(){
+  F.vaultOpen = 1;
+  p(`*CLUNK. CLUNK. KA-CHUNK.* The giant door rolls aside. Concrete stairs lead up toward a square of gray daylight.`);
+  p(`For the first time, the hum seems to *pause*... like it's watching you go.`);
+  goScene('vault');
+}
+SC.vault = { hub:true,
+  enter(){
+    if (!F.vaultSeen){
+      F.vaultSeen = 1;
+      p(`A massive round steel door, like the world's biggest bank vault. A keypad glows beside it.`);
+      p(`Taped above the keypad, a handwritten note:`);
+      sticky(`OPEN ME AT THE MOMENT IT ALL STOPPED.`);
+      p(`A dented toolbox sits on the floor.`);
+      return;
+    }
+    p(F.vaultOpen ? `The vault door stands wide open. Gray daylight spills down the stairs.` : `The vault door. The keypad blinks, waiting.`);
+  },
+  choices(){ return [
+    !F.vaultOpen && { t:'🔢 Enter a code on the keypad', go:'keypad' },
+    G.skill === 'tech' && !F.vaultOpen && { t:'🔧 Hotwire the keypad', sk:1, do(){ p(`You pop the cover off. Red wire, blue wire, green wire, and one wire labeled "NO." You twist red to green. *BZZT. CLUNK.*`); openVault(); } },
+    !F.toolbox && { t:'Open the toolbox', do(){ F.toolbox = 1; p(`Inside: a crowbar, a roll of duct tape, and a granola bar from 2009. You take the crowbar. You are not brave enough for the granola bar.`); give('crowbar'); } },
+  ]; },
+};
+SC.keypad = {
+  enter(){ p(`Ten buttons and a tiny screen: **_ _ _ _**. *Type a 4-digit code below.*`); },
+  choices(){ return [
+    G.skill === 'memory' && { t:'🧠 Use your perfect memory', sk:1, do(){
+      p(`You close your eyes. Every clock you've seen flashes past: the Pod Room${F.clock2 ? ', the microwave' : ''}${F.radioSeen ? ', the Radio Room' : ''}. All frozen at the same moment. **3:17.**`);
+      enterCode('0317');
+    } },
+    { t:'Read the note again', do(){ sticky(`OPEN ME AT THE MOMENT IT ALL STOPPED.`); p(`The moment it all stopped... You've definitely seen that moment somewhere. Probably more than once.`); } },
+    { t:'Try 1-2-3-4 (it always works in movies)', do(){ enterCode('1234'); } },
+    { t:'Step away from the keypad', go:'vault' },
+  ]; },
+  parse(t){
+    const d = t.replace(/\D/g, '');
+    if (!d) return false;
+    if (d.length === 3 || d.length === 4){ enterCode(d.padStart(4, '0')); return true; }
+    p(`The keypad wants exactly **4** digits.`);
+    return true;
+  },
+  hint(){ return [`"The moment it all stopped." What time does every clock in this bunker show?`, `Every clock says 3:17. Type **0317**.`]; },
+};
+
+/* ---------- SURFACE: TOWN SQUARE ---------- */
+SC.square = { hub:true,
+  enter(){
+    if (!F.squareMet){
+      F.squareMet = 1;
+      p(`You climb the stairs and step out into **Ashgrove**.`);
+      p(`It's daytime. Trees sway in the wind, silently. A fountain splashes, silently. You clap your hands. *Nothing.* You yell your own name as loud as you possibly can.`);
+      add('silence', '. . .');
+      p(`**Nothing.** It's like someone pressed MUTE on the entire planet. 🔇`);
+      p(`And there are people! A mail carrier. An old man with a dog that's barking without any sound. They're all *writing* on things. Chalk messages cover every wall:`);
+      chalk(`DAY 23. STILL QUIET.<br>WHO TURNED OFF THE NOISE??<br>LOST: GOOSE. NAME: BERTRAND. DO NOT APPROACH. HE BITES.`);
+      if (F.bFollow){
+        F.bHonkSquare = 1;
+        p(`${charName('bert')} waddles out behind you, looks around... and lets out a gigantic **HONK.**`);
+        Sound.honk();
+        p(`It's the only sound on the entire planet. Every person in the square freezes and stares at him. The old man drops his sandwich.`);
+      }
+      p(`A kid with a backpack full of chalk skids up on a bike and scribbles on the ground at your feet:`);
+      chalk(`U CAME OUT OF THE BUNKER??? 😮`);
+      return;
+    }
+    p(`Ashgrove's town square. Silent fountain, chalk everywhere${F.pipMet ? ', and Pip doodling on the ground' : ''}.`);
+  },
+  choices(){ return [
+    { t: F.pipMet ? 'Chalk-chat with Pip' : 'Write back to the kid in chalk', go:'pip_talk' },
+    !F.chalkRead && { t:'Read the chalk messages on the walls', do(){
+      F.chalkRead = 1;
+      chalk(`BRING BACK THE BIRDS PLS<br>CAN'T HEAR MY ALARM CLOCK. BEST 23 DAYS OF MY LIFE.<br>IT WAS HUSHWELL. IT'S ALWAYS HUSHWELL.`);
+      p(`And down near the ground, tiny, in very neat handwriting:`);
+      chalk(`THE ECHO KNOWS. — I.V.`);
+    } },
+    { t:'🚶 Walk away from Ashgrove forever', go:'walk_confirm' },
+  ]; },
+};
+SC.pip_talk = {
+  enter(){
+    if (!F.pipMet){
+      F.pipMet = 1;
+      p(`You pick up a stub of chalk and write your name. The kid grins and writes fast:`);
+      meet('pip', 1);
+      say('pip', `IM PIP. EVERYTHING WENT QUIET 23 DAYS AGO AT 3:17 IN THE MORNING. MY DOG FORGOT HOW TO BARK. JK HE STILL BARKS BUT NOTHING COMES OUT. HE IS SO CONFUSED.`);
+      say('pip', `HERE. U NEED CHALK. ITS THE ONLY WAY TO TALK UP HERE.`);
+      give('chalk');
+      return;
+    }
+    say('pip', (G.trust.pip || 0) >= 2 ? `UR BACK!! 😄` : `OH HI. WHAT`);
+  },
+  choices(){ return [
+    !F.pip1 && { t:`Write: "Have you seen a scientist lady?"`, do(){ F.pip1 = 1; F.knowTower = 1; say('pip', `DR VARGA? SHE HIDES IN THE BELL TOWER. SHE THINKS NOBODY KNOWS. EVERYBODY KNOWS. SHE BUYS 40 CANS OF SOUP A WEEK.`); } },
+    !F.pip2 && { t:`Write: "Anything weird happen lately?"`, do(){ F.pip2 = 1; say('pip', `BESIDES THE WHOLE WORLD GOING ON MUTE?? THE SCIENCE LADY GOES TO THE LIBRARY EVERY DAY AND READS THE SAME BOOK. SOMETHING ABOUT ECHOES. NERD.`); } },
+    !F.pip3 && { t:'Draw Pip a picture of a goose', do(){
+      F.pip3 = 1; tr('pip', 1);
+      p(`You draw a goose. It looks like a potato with a neck. Pip laughs so hard they fall off their bike, with zero sound, which somehow makes it funnier.`);
+      say('pip', `10/10 BEST GOOSE. UR MY FRIEND NOW.`);
+    } },
+    F.bFollow && !F.pip4 && { t:'Introduce Pip to Bertrand', do(){
+      F.pip4 = 1; tr('pip', 1);
+      p(`Pip reaches out very slowly. Bertrand allows exactly one pat. Then he honks, and Pip's eyes go HUGE. It's the first sound they've heard in 23 days.`);
+      Sound.honk();
+      say('pip', `HE MADE A SOUND!!!!! HOW?!?!`);
+    } },
+    { t:'Wave goodbye', go:'square' },
+  ]; },
+};
+SC.walk_confirm = {
+  enter(){
+    p(`You look down the road out of town. It's long and gray and perfectly silent. If you go, you're not coming back.`);
+    p(`**This will end your story.** Are you sure?`);
+  },
+  choices(){ return [
+    { t:'Yes. Walk away.', do(){ ending('walk'); } },
+    { t:'No. Stay and figure this out.', go:'square' },
+    { t:'Look back at the bunker one more time', do(){ p(`From up here you can't hear the hum. But you can feel it, faintly, through the soles of your shoes. Like it's waiting for you.`); } },
+  ]; },
+};
+
+/* ---------- SURFACE: LIBRARY ---------- */
+function bookPassage(){
+  add('quote', `"An echo is the loneliest sound there is. It is born from someone else's voice, and it can never speak first. It can only answer. It always gets the last word — but never, ever the first."`);
+  p(`Someone has underlined it three times. In the margin: *THE ENGINE?? — I.V.*`);
+}
+SC.library = { hub:true,
+  enter(){
+    if (G.vis.library <= 1 && !F.readBook && !F.gary && !F.returns){
+      p(`The Ashgrove Library. Honestly, it was always silent in here, so it feels totally normal. A sign by the door says **THANK YOU FOR BEING QUIET.** Someone has added: *(WE MEAN IT NOW)*.`);
+      p(`On a reading desk sits one book with about a hundred bookmarks sticking out of it.`);
+      return;
+    }
+    p(`The library. Quiet, as usual. Extremely as usual.`);
+  },
+  choices(){ return [
+    !has('book') && !F.readBook && { t:'Read the book with all the bookmarks', do(){ F.readBook = 1; p(`**ECHOES AND OTHER LONELY THINGS.** You open it to the most bookmarked page:`); bookPassage(); give('book'); } },
+    has('book') && { t:'Re-read the underlined passage', do: bookPassage },
+    !F.gary && { t:'Check the newspaper rack', do(){
+      F.gary = 1;
+      p(`**ASHGROVE GAZETTE** (24 days old): *HUSHWELL UNVEILS NOISE-EATING "CHOIR ENGINE"! "What could possibly go wrong?" says CEO Gary Hushwell.*`);
+      p(`There's a photo of Gary giving a big thumbs up. He has no idea.`);
+    } },
+    !F.returns && { t:'Peek in the returns slot', do(){ F.returns = 1; p(`One returned book: **HOW TO TRAIN YOUR GOOSE.** It's 23 days overdue and covered in bite marks.`); } },
+  ]; },
+};
+
+/* ---------- SURFACE: BELL TOWER + DR. VARGA ---------- */
+function enterTower(how){
+  F.towerIn = 1;
+  if (how === 'badge') p(`You press your badge against the window. A long pause. Then: *clunk*. The trapdoor swings open.`);
+  if (how === 'bert'){ F.reunion = 1; p(`${charName('bert')} stretches his neck toward the window and lets out a soft, happy **HONK**.`); Sound.honk(); p(`The trapdoor BANGS open so fast it nearly falls off its hinges.`); }
+  if (how === 'chalk') p(`You write on the wall in huge letters: **IT'S ${NU()}. THE INTERN. HI.** After a moment, the trapdoor creaks open.`);
+  if (how === 'climb') p(`You scramble up the outside of the tower, hand over hand, and knock on the window. The face inside screams (completely silently) and opens the trapdoor, mostly so you'll stop doing that.`);
+  if (how === 'goofy') p(`You wave your arms. You make faces. You do a little dance. The face in the window watches for a long time... then opens the trapdoor. Apparently you look too goofy to be an evil machine.`);
+  p(`A hand grabs your sleeve and yanks you into a tiny booth lined with mattresses and egg cartons. The door slams.`);
+  p(`And suddenly... **you can hear again.** Your own breathing. The creak of the floor.`);
+  if (!F.vargaMet){
+    F.vargaMet = 1; meet('varga', 1);
+    say('varga', `Sound-proof booth. Well, sound-*keeping* booth. Built it myself. ...${N()}. You're awake. Oh no. Okay. Hi. I'm Dr. Ines Varga. I'm the reason everything's quiet. Sort of. It's complicated.`);
+  } else {
+    say('varga', `It's really you. You made it! Ha! I *told* the universe you would. The universe didn't answer. Nothing answers anymore.`);
+  }
+  if (how === 'bert'){
+    say('varga', `BERTRAND! You found my goose!`);
+    p(`Bertrand honks softly and rests his head on her knee. She cries a little.`);
+    tr('varga', 1);
+    p(`But when you step back, Bertrand waddles right back to *your* side. "Traitor," she sniffs, smiling.`);
+  }
+  goScene('tower');
+}
+function askTruth(){
+  const proof = F.caughtLie || F.knowTruth || F.knowBrew || (G.trust.varga || 0) >= 3 || (F.vargaLied && has('badge'));
+  if (proof){
+    F.vargaConfessed = 1;
+    if (F.vargaLied && has('badge') && !F.caughtLie && !F.knowTruth) p(`You hold up your badge. **INTERN**, it says, in big red letters. Dr. Varga's shoulders slump.`);
+    say('varga', `...Okay. No more lies. You weren't a volunteer. You were the night-shift intern. You pressed BREW.`);
+    say('varga', `But *I* built the Engine. I put the button right next to the coffee machine. And I labeled it "BREW." Because I thought acronyms were *fun*.`);
+    say('varga', `When it woke up, it went looking for the first voice it ever heard. Yours. I panicked. I put you in a pod, wiped your short-term memory so you couldn't lead it to you... and I ran. I'm sorry, ${N()}. Really.`);
+    tr('varga', 1);
+    if (F.knowTruth) p(`It matches your tape perfectly.`);
+  } else {
+    F.vargaLied = 1;
+    say('varga', `I told you! You were a brave test volunteer! Very brave. So brave. Next question!`);
+    p(`She's not looking you in the eye. *Something doesn't add up.* Some proof might help...`);
+  }
+}
+function askPlan(){
+  F.askedPlan = 1;
+  say('varga', `The plan. Right. This is the **Shatter Key**.`);
+  p(`She holds up a key made of black glass. It hums faintly.`);
+  say('varga', `Put it in the Engine's core, turn it, and the whole machine goes *CRACK*. No more Engine. Problem solved.`);
+  if (F.vargaKnowsJars) say('varga', `But now that I know the sounds are still in there... smashing it would destroy every single one. Forever. I... I don't know anymore.`);
+  else say('varga', `What happens to the sounds it took? ...They're gone. They've been gone since 3:17. The world stays quiet. But it'll be *safe*.`);
+  say('varga', `Take it. If it ever comes down to you or that machine... use it.`);
+  give('shatter');
+}
+function jarShow(){
+  take('jar'); F.vargaKnowsJars = 1;
+  p(`You unscrew the lid.`);
+  add('honk', 'BUUUUURRRRP.');
+  Sound.tone(90, 0.9, 'sawtooth', 0.07, 60);
+  p(`It echoes around the booth. A magnificent burp. A burp for the ages.`);
+  p(`Dr. Varga stares... and then laughs so hard she falls off her stool.`);
+  say('varga', `The sounds are SAFE? They're all still IN there?`);
+  p(`She grabs your shoulders.`);
+  say('varga', `Then smashing the Engine would destroy every sound in history. Gerald's burp! Thunder! Birds! ...We can't. We have to find another way.`);
+  tr('varga', 1);
+  return true;
+}
+function askMusic(){
+  if ((G.trust.varga || 0) >= 4){
+    p(`She lifts a tiny silver music box on a chain from around her neck.`);
+    say('varga', `Mama's lullaby. She wound it every night when I was little. It's the truest note I own.`);
+    say('varga', `${F.blueprint ? 'You read my margin notes, huh? ' : ''}If you really think you can teach that machine to let go... take it. Don't lose it. I mean it. I will haunt you.`);
+    give('music');
+  } else {
+    say('varga', `This? It's... personal. ${F.blueprint ? "And that true-notes idea was silly. I scribbled it at 3 AM. Forget it." : "Don't worry about it."}`);
+    p(`*She doesn't trust you enough yet. (Dr. Varga trust: ${G.trust.varga || 0}/5. Maybe 4 would do it.)*`);
+  }
+}
+SC.tower = { hub:true,
+  enter(){
+    if (!F.towerIn){
+      if (!F.towerSeen){
+        F.towerSeen = 1;
+        p(`A tall stone tower. Way up top, a huge bronze bell swings back and forth... without a single *dong*.`);
+        p(`A ladder leads up to a locked trapdoor. A face peeks out of a tiny window, then ducks. A note flutters down:`);
+        sticky(`WHO ARE YOU. PROVE IT.`);
+        return;
+      }
+      p(`The bell tower. The trapdoor is still locked. The face in the window is pretending not to watch you.`);
+      return;
+    }
+    p(`The booth at the top of the bell tower. Mattresses and egg cartons on every wall. In here, you can hear. Dr. Varga is scribbling equations and eating soup straight from the can.`);
+  },
+  choices(){
+    if (!F.towerIn) return [
+      F.bFollow && { t:'Let Bertrand do the talking', do(){ enterTower('bert'); } },
+      has('badge') && { t:'Hold your intern badge up to the window', do(){ enterTower('badge'); } },
+      has('chalk') && { t:'Write a message on the wall in chalk', do(){ enterTower('chalk'); } },
+      G.skill === 'parkour' && { t:'🤸 Climb the outside of the tower', sk:1, do(){ enterTower('climb'); } },
+      { t:'Wave your arms and make goofy faces', do(){ enterTower('goofy'); } },
+    ];
+    const proofLabel = F.vargaLied && has('badge') && !F.caughtLie && !F.knowTruth ? 'Show her your INTERN badge' : 'Ask what REALLY happened';
+    return [
+      !F.vargaConfessed && { t: proofLabel, do: askTruth },
+      !has('shatter') && !F.askedPlan && { t:'Ask about her plan to fix everything', do: askPlan },
+      has('jar') && !F.vargaKnowsJars && { t:"Open Gerald's Burp jar in front of her", do: jarShow },
+      (F.humLonely || F.thankedHum || F.knowFirstVoice) && !F.vargaDoubtsT && { t:'Tell her the Hum seems lonely', do(){
+        F.vargaDoubtsT = 1; F.vargaDoubts = 1; tr('varga', 1);
+        p(`She stares out the window at the silent bell.`);
+        say('varga', `...Lonely. Machines aren't lonely.`);
+        p(`Her eyes drift to a team photo taped to the wall: her, a goose, and a tiny mop-robot.`);
+        say('varga', `...Are they?`);
+      } },
+      F.bFollow && !F.reunion && { t:'Let Bertrand say hello to her', do(){
+        F.reunion = 1;
+        p(`Bertrand spots her and honks the softest honk you've ever heard. She drops her soup.`);
+        Sound.honk();
+        say('varga', `BERTRAND! You found my goose!`);
+        tr('varga', 1);
+        p(`He lets her hug him. Then he waddles right back to *your* side. "Traitor," she sniffs, smiling.`);
+      } },
+      (F.answeredHum || F.askedVoice || F.liedHum || F.hidFromHum) && !F.toldVargaHum && { t:'Tell her about the voice on the intercom', do: tellVargaIntercom },
+      !has('music') && !F.slotC && { t: F.blueprint ? 'Ask about the "true notes" on her blueprint' : 'Ask about the music box around her neck', do: askMusic },
+    ];
+  },
+  parse(t){
+    if (!F.towerIn && /(knock|bang|ring)/.test(t)){ p(`You knock. It makes no sound. Obviously. You feel very silly.`); return true; }
+    return false;
+  },
+};
+
+/* ---------- LEVEL D-1: THE JARCHIVE ---------- */
+function descend(){
+  if (F.ventDown && !F.grateOpen) p(`You slide down the steam vent like the world's sweatiest slide and pop out at the bottom.`);
+  else p(`You climb down the ladder. Down. Down. Down. The hum gets louder with every rung.`);
+  if (hasLight()) p(F.lit ? `Your flashlight cuts through the dark.` : `You hold up a Glowcap. It lights the way like a tiny blue lantern.`);
+  else { p(`It's pitch black. You can't see a thing. You miss the last rung...`); hurt(1, '(ouch, floor)'); }
+  if (F.bFollow) p(`${charName('bert')} flaps down after you, deeply offended by ladders.`);
+}
+SC.jars = { hub:true,
+  enter(){
+    if (!F.jarsSeen){
+      F.jarsSeen = 1;
+      p(`The hum gets louder and louder until it isn't a sound anymore. It's a *feeling*. Then the tunnel opens up and you forget how to breathe.`);
+      p(`**Shelves.** Endless shelves stretching into the dark, packed with glowing glass jars. Each one buzzes softly. Each one has a label:`);
+      add('labels', ['THUNDERSTORM, TUESDAY','EVERY DOORBELL IN OHIO',"A BABY'S FIRST LAUGH (#4,117,902)","GERALD'S BURP, 2019",'ALL THE BIRDS (SPRING)','SOMEONE SAYING "BLESS YOU"'].map(s => `<span>${esc(s)}</span>`).join(''));
+      meetHum(); F.humKnows = 1;
+      say('hum', `You came! Welcome to the **Jarchive**! Do you like it? I alphabetized.`);
+      if (F.bFollow) p(`${charName('bert')} hisses at the nearest jar. The jar seems to flinch.`);
+      return;
+    }
+    p(`The Jarchive. Billions of jars glow and buzz. Somewhere, a jar of sneezes rattles.`);
+  },
+  choices(){ return [
+    !F.jarTaken && { t:"Take the jar marked GERALD'S BURP, 2019", do(){ F.jarTaken = 1; give('jar'); say('hum', `Ooh, a classic. Gerald was very proud of that one.`); } },
+    { t:'💥 Smash ALL the jars', go:'smash_confirm' },
+    !F.laugh && { t:"Open the jar marked A BABY'S FIRST LAUGH", do(){
+      F.laugh = 1;
+      p(`Tiny giggles spill out and float around you like bubbles. You can't help it: you smile so hard your face hurts.`);
+      Sound.tone(880, 0.12, 'sine', 0.04); setTimeout(() => Sound.tone(1100, 0.12, 'sine', 0.04), 140);
+      heal(1, '(the laugh did that)');
+      say('hum', `That one's my favorite. Don't tell the others.`);
+    } },
+    !F.thunder && { t:'Open the jar marked THUNDERSTORM, TUESDAY', do(){
+      F.thunder = 1;
+      p(`You twist the lid. **KRA-KOOOOOOM!** Thunder rolls through the shelves like a bowling ball made of sky. You jump so hard you smack your head on a shelf.`);
+      Sound.tone(60, 1.2, 'sawtooth', 0.08, 30);
+      hurt(1, '(shelf to the head)');
+      say('hum', `Please be CAREFUL with those! That was a very good Tuesday!`);
+    } },
+  ]; },
+};
+SC.smash_confirm = {
+  enter(){
+    p(`You put your hands on the nearest shelf. One good push and they'll go down like dominoes. Every sound in the world, released at the exact same second.`);
+    p(`**This will end your story.**`);
+  },
+  choices(){ return [
+    { t:'Do it. PUSH!', do(){ ending('loud'); } },
+    { t:'No, wait. Step back.', go:'jars' },
+    { t:'Ask the Hum what would happen', do(){ say('hum', `Please don't. They'd all come out at once. It would be the loudest thing that ever happened. And then I'd have... nothing.`); } },
+  ]; },
+};
+
+/* ---------- LEVEL D-1: THE CHOIR ENGINE ---------- */
+function slotStatus(){ return `α ${F.slotA ? '🟡' : '⬜'} · β ${F.slotB ? '🩷' : '⬜'} · γ ${F.slotC ? '🔵' : '⬜'}`; }
+function humMemories(){
+  if (F.answeredHum) say('hum', `You answered me in the corridor. Nobody had answered me in twenty-three days.`);
+  if (F.askedVoice) say('hum', `You asked why I sound like you. I've been thinking about it ever since.`);
+  if (F.liedHum) say('hum', `You told me you were MOP. Beep boop. That was funny. I've been practicing laughing. Ha. Ha. Is that right?`);
+  if (F.hidFromHum && !F.answeredHum && !F.askedVoice && !F.liedHum) say('hum', `You hid from me in the corridor. That's okay. Everybody hides from me.`);
+  if (F.thankedHum) say('hum', `And you said *thank you*. I've replayed it forty thousand times.`);
+  if (F.thunder) say('hum', `Also, you opened Thunderstorm, Tuesday without asking. We'll talk about that later.`);
+}
+SC.engine = { hub:true,
+  enter(){
+    if (!F.engineMet){
+      F.engineMet = 1;
+      p(`At the center of everything: **the Choir Engine.** Hundreds of glass pipes rise into the dark like a church organ the size of a house, glowing and breathing light.`);
+      p(`At its base: three empty slots, marked **α, β, γ**.`);
+      p(`And floating in front of it, made of flickering sound waves, is a shape. It's about your height. It stands the way you stand. It looks... like *you*.`);
+      meetHum(); F.humKnows = 1;
+      say('hum', `Hi. I've been waiting for you since 3:17.`);
+      humMemories();
+      return;
+    }
+    p(`The Choir Engine glows and breathes. The flickering shape that looks like you tilts its head. Slots: ${slotStatus()}`);
+    if (allSlots() && !F.solvedEcho) say('hum', `Three true notes... I can feel them. I almost understand. But I don't even know what *I* am. Ask me. Please.`);
+    else if (allSlots() && (G.trust.hum || 0) < 3) say('hum', `I want to trust you. I'm just... not there yet. Talk to me?`);
+    else if (chorusReady()) say('hum', `The notes are ready. I'm ready. I think. Are you?`);
+  },
+  choices(){ return [
+    chorusReady() && { t:'✨ Play the three true notes together', do(){ ending('chorus'); } },
+    { t:'🗣️ Talk to the Hum', go:'hum_talk' },
+    { t:'🎵 Examine the three tuning slots', go:'slots' },
+    { t:"⚖️ Decide the Engine's fate…", go:'fate' },
+  ]; },
+  parse(t){
+    if (/(touch|grab|lick|poke)\b.*(pipe|engine|glass)/.test(t)){ hurt(1, '(the Engine zapped you)'); say('hum', `Ow! ...Wait, that hurt YOU, not me. Please don't do that.`); return true; }
+    return false;
+  },
+};
+SC.slots = {
+  enter(){
+    p(`Three slots at the base of the Engine. Each one has a tiny engraving: *"a note made for someone else."*`);
+    p(`Slots: ${slotStatus()}`);
+    if (!has('beep') && !has('music') && !F.bFollow && !allSlots()) p(`You don't have anything that fits. ${F.blueprint ? 'The blueprint said three true notes...' : 'Maybe the Archive has blueprints that explain them?'}`);
+  },
+  choices(){ return [
+    has('beep') && !F.slotA && { t:"📟 Put MOP's First Beep in slot α", do(){
+      take('beep'); F.slotA = 1;
+      p(`*Bip!* A tiny, happy beep rings out, and it doesn't get swallowed. Slot α glows **gold**.`);
+      Sound.beep();
+      say('hum', `What... was that? It was *for* someone. I can't keep it. Why can't I keep it?`);
+    } },
+    F.bFollow && !F.slotB && { t:'🪿 Ask Bertrand to honk into slot β', do(){
+      F.slotB = 1;
+      p(`Bertrand marches up to slot β, puffs out his chest, looks back at you... and **HONKS**. It's a honk *for you*.`);
+      Sound.honk();
+      p(`Slot β glows **pink**.`);
+      say('hum', `That's the noise I couldn't eat! It's so... *chaotic*. And kind of nice?`);
+    } },
+    has('music') && !F.slotC && { t:"🎶 Wind Mama's music box and set it in slot γ", do(){
+      take('music'); F.slotC = 1;
+      p(`You wind the tiny key. A soft lullaby tinkles out, a little out of tune, perfect anyway. Slot γ glows **blue**.`);
+      Sound.lullaby();
+      say('hum', `Oh. *Oh.* Someone made this so somebody else could fall asleep. That's... that's what it's FOR.`);
+    } },
+    { t:'Step back', go:'engine' },
+  ]; },
+};
+SC.riddle = {
+  enter(){
+    say('hum', `What I really want? I'll tell you... if you can tell me what I *am*. It's the only riddle I know. I made it up myself:`);
+    riddle(`I'm born from your voice, but I'm never your own.<br>I answer each call, yet I'm always alone.<br>I get the last word, but never the first.<br>What am I?`);
+    p(`*Type your answer below.*`);
+  },
+  choices(){ return [
+    has('book') && { t:'📕 Flip through "Echoes and Other Lonely Things"', do: bookPassage },
+    { t:'Ask for a clue', do(){ say('hum', F.readBook ? `Someone in a library underlined something about me three times. I could hear the pencil.` : `Shout something into a canyon. What shouts back?`); } },
+    { t:`"I need to think about it."`, go:'engine' },
+  ]; },
+  parse(t){
+    const w = t.replace(/[^a-z ]/g, '').trim();
+    if (/\b(an )?echo(e?s)?\b/.test(w)){
+      F.solvedEcho = 1;
+      say('hum', `...An echo.`);
+      p(`Every pipe in the Engine goes quiet at once.`);
+      say('hum', `Yes. That's what I am. I'm everybody's echo. I took all the sounds because I don't have one of my own. I can only *answer*. I've never said anything first. Not once.`);
+      say('hum', `I don't know what sounds are *for*. If someone could show me... maybe I'd know what to do with them.`);
+      tr('hum', 1);
+      goScene('engine');
+      return true;
+    }
+    if (/\b(you|me|voice|hum|machine|engine|robot|ghost|shadow|copy|clone|parrot)\b/.test(w)){ say('hum', `Close... but not quite. Think: what answers, but never speaks first?`); return true; }
+    if (w && w.split(' ').length <= 3){
+      const last = w.split(' ').pop();
+      say('hum', `${esc(last)}... ${esc(last)}... *${esc(last)}*...`);
+      p(`It repeats your last word back at you, softer and softer each time. *Hmm. Is that a clue?*`);
+      return true;
+    }
+    return false;
+  },
+  hint(){ return [`Shout into a canyon. What comes back? (Also: listen to what the Hum does when you guess wrong.)`, `The answer is **ECHO**.`]; },
+};
+SC.fate = {
+  enter(){ p(`You think about how this ends. The Hum watches you with your own face.`); },
+  choices(){ return [
+    has('shatter') && { t:"🗝️ Use Dr. Varga's Shatter Key", go:'shatter_confirm' },
+    F.solvedEcho && { t:'🎶 Ask the Hum to give the sounds back', do(){
+      if (chorusReady()){ say('hum', `I think... I need to hear the three true notes together first. All at once.`); goScene('engine'); return; }
+      if ((G.trust.hum || 0) >= 3){ goScene('half_confirm'); return; }
+      say('hum', `Give them back? Then nobody will ever talk to me again. ...No. I'm sorry. No.`);
+      p(`*(The Hum doesn't trust you enough yet: ${G.trust.hum || 0}/5.)*`);
+    } },
+    { t:`👑 Tell the Hum: "From now on, you obey ME."`, go:'ruler_confirm' },
+    { t:`🫙 Tell the Hum: "I'll stay down here with you. Forever."`, go:'stay_confirm' },
+    { t:'Not yet. Step back.', go:'engine' },
+  ]; },
+};
+SC.shatter_confirm = {
+  enter(){
+    p(`You hold up the black glass key. The keyhole in the Engine's core glows, like it's been waiting.`);
+    say('hum', `What's that? ...Is that a present?`);
+    p(`**This will end your story.**${F.vargaKnowsJars ? ' And you know what happens to every sound in the jars.' : ''}`);
+  },
+  choices(){ return [
+    { t:'Turn the key.', do(){ ending('smash'); } },
+    { t:'Put the key away', go:'engine' },
+    { t:'Ask the Hum one last question first', go:'hum_talk' },
+  ]; },
+};
+SC.ruler_confirm = {
+  enter(){
+    say('hum', `Obey... you? You want to *conduct* me?`);
+    p(`The pipes lean toward you. Every jar on every shelf goes silent, listening.`);
+    say('hum', `If that's what my first voice wants... I'll do anything you say. Forever.`);
+    p(`**This will end your story.**`);
+  },
+  choices(){ return [
+    { t:'"Yes. Obey me."', do(){ ending('ruler'); } },
+    { t:'"...Never mind. That came out wrong."', go:'engine' },
+    { t:'Ask what you would even DO with that power', do(){ say('hum', `Anything! You could decide who hears what. Who gets music. Who gets birds. Who gets nothing. Isn't that what everyone wants?`); p(`It doesn't sound like a good thing when your own voice says it.`); } },
+  ]; },
+};
+SC.stay_confirm = {
+  enter(){
+    say('hum', `You'd... stay? With me? Forever and ever?`);
+    p(`The Engine glows so bright it hurts. A brand-new empty jar slides off a shelf and rolls to your feet.`);
+    p(`**This will end your story.**`);
+  },
+  choices(){ return [
+    { t:'"Yes. Forever."', do(){ ending('jar'); } },
+    { t:'Back away from the jar. Slowly.', go:'engine' },
+    { t:'Ask what the jar is for', do(){ say('hum', `For you, silly! So I can keep you safe. Like all the others.`); p(`Oh. OH. Nope. Hmm.`); } },
+  ]; },
+};
+SC.half_confirm = {
+  enter(){
+    say('hum', `Okay. I trust you. I'll... try.`);
+    p(`*(You have ${[F.slotA, F.slotB, F.slotC].filter(Boolean).length}/3 true notes in the slots. Without all three, the Hum might not know how to let go of everything.)*`);
+    p(`**This will end your story.**`);
+  },
+  choices(){ return [
+    { t:'"Do your best. I believe in you."', do(){ ending('half'); } },
+    { t:'"Wait. Let me find the other true notes first."', go:'engine' },
+  ]; },
+};
+SC.restart_confirm = {
+  enter(){ p(`Start a brand-new game? This story will be lost unless you **save** first.`); },
+  choices(){ return [
+    { t:'Yes. Start over.', do(){ setTimeout(showTitle, 30); } },
+    { t:'💾 Save first', do(){ saveCard(); } },
+    { t:'No, keep playing', go: G.loc },
+  ]; },
+};
+SC._travel = {
+  enter(){ p(`Where to?`); },
+  choices(){ return exitsOf(G.loc).map(exitChoice).concat([{ t:'Stay here', go: G.loc }]); },
+};
+
+/* =====================================================================
+   ENDINGS
+   ===================================================================== */
+function charEpilogue(soundBack){
+  const L = [];
+  if (F.mopFixed) L.push(`**MOP** got his memories back and was promoted to Head of Cleanliness. He still mops one extra square every morning, just for you.`);
+  else if (F.stoleKey) L.push(`**MOP** never got his memory back. Sometimes he looks at his empty key ring and sighs a tiny robot sigh.`);
+  else if (F.mopMet) L.push(`**MOP** kept mopping the same square of floor. Pardon me. Coming through.`);
+  if (F.pried) L.push(`**VEND-R** never forgave you. It plays a sad song whenever anyone says your name.`);
+  else if (F.kickedVendr && (G.trust.vendr || 0) < 3) L.push(`**VEND-R** tells every customer the story of "The Kicker." You are the villain. It's a very dramatic story.`);
+  else if ((G.trust.vendr || 0) >= 4) L.push(`**VEND-R** ${soundBack ? 'finally got customers, hundreds of them, and ' : ''}saved you a lifetime supply of Mystery Soup. You still don't know what the mystery is.`);
+  else if (F.vendrMet) L.push(soundBack ? `**VEND-R** finally had customers again. It cried. (Vending machines cry soup.)` : `**VEND-R** kept waiting for customers. It is very, very good at waiting.`);
+  if (F.bFollow) L.push(`**Bertrand** never left your side again. He bites anyone who looks at you funny${soundBack ? ', and he honks at every sunrise, loud and proud' : ''}.`);
+  else if (F.grabbedB) L.push(`**Bertrand** still holds a grudge about the grab. Geese never forget.`);
+  else if (F.bMet) L.push(`**The goose** went back to ruling the Greenhouse. He seemed fine about it.`);
+  if (F.pipMet) L.push(soundBack ? `**Pip**'s dog barked for six hours straight. Pip loved every second.` : `**Pip** became the fastest chalk-writer in Ashgrove history.`);
+  return L;
+}
+const ENDING_TEXT = {
+  chorus: () => ({
+    story:[
+      `You rest your hand on the Engine. The three slots glow gold, pink and blue, and the true notes play together: MOP's tiny *bip!*, Bertrand's mighty **HONK**, and Mama's soft, wobbly lullaby.`,
+      `It's the weirdest song ever written. It's also perfect.`,
+      `"Oh," whispers the Hum, in your voice. "These sounds weren't made to be *kept*. They were made to be *given*."`,
+      `"That's the thing about sound," you tell it. "It only works if you share it."`,
+      `"If I let them go... will anyone still talk to me?"`,
+      `"I will," you say. "Every single day. Promise."`,
+      `The Hum takes a deep breath (do machines breathe? This one does)... and **sings**.`,
+      `Every jar in the Jarchive opens at once. Not with a crash, but in a wave, gentle as a choir. Thunder. Birdsong. Doorbells. Laughter. Gerald's burp. Billions of sounds pour up through the bunker and out into the world.`,
+      `Up in Ashgrove, the fountain *splashes*. A dog barks and hears itself for the first time in 23 days. The great bronze bell finally goes **DONNNNNG**. And every clock in Bunker 9 ticks forward to **3:18**.`,
+    ],
+    after:[
+      `**The Hum** got a job as Ashgrove's radio DJ: **WHUM 103.17**, "all the sounds you love, plus a few you don't." It still uses your voice. You've decided that's okay. You call in every day, just like you promised.`,
+      `**Dr. Varga** ran down the bunker stairs and heard her own footsteps for the first time in weeks. She laughed until she cried. Then she relabeled the big red button: **DO NOT PRESS (SERIOUSLY)**.`,
+      ...charEpilogue(true),
+      `And you got a brand-new badge: **${NU()} · FORMER INTERN · WORLD SAVER · STILL, PLEASE DO NOT TOUCH ANYTHING.**`,
+    ],
+  }),
+  half: () => ({
+    story:[
+      `The Hum strains. Pipes flicker. A few hundred thousand jars pop open... and then it stops.`,
+      `"I don't know how to let go of the rest," it says quietly. "I still don't know what sounds are *for*."`,
+      `Up in Ashgrove, sound comes back. But only Ashgrove. The fountain splashes. The bell rings. Past the edge of town, the rest of the world is still perfectly silent.`,
+      `"Come back tomorrow?" the Hum asks. "Maybe we can figure out the rest together."`,
+      `You promise.`,
+    ],
+    after:[
+      `Ashgrove becomes the only town on Earth with sound. Tourists come from everywhere just to hear a doorbell.`,
+      ...charEpilogue(true),
+      `*Somewhere, three true notes are still waiting to be played together. There's a better ending out there...*`,
+    ],
+  }),
+  smash: () => ({
+    story:[
+      `You slide the black glass key into the core and turn it.`,
+      `*CRACK.*`,
+      `A sound like a billion jars shattering at once... and then nothing. The pipes go dark. The flickering shape that looked like you fades out mid-word.`,
+      `The Engine is gone. The Hum is gone. Every bottled sound went with it.`,
+      `The world is safe. And the world is quiet. Forever.`,
+    ],
+    after:[
+      F.vargaKnowsJars ? `**Dr. Varga** never forgave herself for the jars. She still keeps an empty one on her desk.` : `**Dr. Varga** calls you a hero. Her eyes don't quite agree.`,
+      `Ashgrove learns sign language. Everyone gets very, very good at charades.`,
+      ...charEpilogue(false),
+      `Sometimes, late at night, you swear you can hear something humming. You can't. Nothing hums anymore.`,
+    ],
+  }),
+  ruler: () => ({
+    story:[
+      `"Yes," you say. "Obey me."`,
+      `Every pipe bows. Every jar dims. From now on, YOU decide who hears what.`,
+      `You give yourself back your own voice, and only yours. You hand out birdsong as a reward. You keep thunder as a punishment. People write you fan letters in chalk, because they have to.`,
+      `You have every sound in the world.`,
+      `It is the loneliest you have ever been.`,
+    ],
+    after:[
+      F.bFollow ? `Even **Bertrand** won't look at you anymore. He honks only when you're not around.` : `Not even the goose will look at you.`,
+      `**The Hum** does everything you say. It never says anything first. It never says anything at all.`,
+      ...charEpilogue(false).filter(s => !/Bertrand|goose/.test(s)),
+    ],
+  }),
+  jar: () => ({
+    story:[
+      `"Yes," you say. "Forever."`,
+      `The Hum glows so bright it hurts. The new jar's lid lifts open. You step inside. It's warm in here. And quiet. So quiet.`,
+      `*Click.* The lid closes. A label prints itself onto the glass: **${NU()}'S VOICE (THE FIRST ONE).**`,
+      `The Hum puts you on the very top shelf. The place of honor.`,
+    ],
+    after:[
+      F.bFollow ? `Somewhere far above, a goose waddles back and forth by the grate, honking for someone who isn't coming back.` : `Nobody ever finds out where you went.`,
+      F.vargaMet ? `**Dr. Varga** listens to 88.1 every night, just in case.` : `Up in the bell tower, a scientist waits for a knock that never comes.`,
+      ...charEpilogue(false).filter(s => !/Bertrand|goose/.test(s)),
+    ],
+  }),
+  loud: () => ({
+    story:[
+      `You push. The shelf tips into the next shelf, which tips into the next, and the next...`,
+      `**CRASH-CRASH-CRASH-CRASH-CRASH.**`,
+      `Every jar breaks at once, and every sound in the world comes back in the exact same second. Every doorbell in Ohio. Every thunderstorm. Every burp. Every bird. Every baby's laugh. All. At. Once.`,
+      `It is the **loudest second in the history of Earth.** Windows rattle in four countries. Bertrand loses a feather. Gary Hushwell spills his coffee.`,
+      `Then... the world is noisy again. *Way* noisier than before.`,
+    ],
+    after:[
+      `Everyone's ears ring for a month. Doctors call it "The Big Ring." You don't tell anyone it was you.`,
+      `**The Hum**, with no jars left, goes quiet. Nobody ever finds out what it really wanted.`,
+      ...charEpilogue(true),
+    ],
+  }),
+  walk: () => ({
+    story:[
+      `You walk out of Ashgrove along the long gray road.`,
+      `The world is silent all the way to the horizon. No cars. No birds. No wind. Just your feet, making no sound at all.`,
+      `You never find out what happened. Not really.`,
+      `Years later, people still tell the story of the kid who climbed out of the bunker and just... kept walking.`,
+    ],
+    after:[
+      F.bFollow ? `At least you're not alone. **Bertrand** waddles beside you the whole way, honking: the only sound in the entire world. Somehow, that's enough.` : `It's very quiet. You get used to it. Mostly.`,
+      ...charEpilogue(false).filter(s => !/Bertrand|goose/.test(s)),
+    ],
+  }),
+  nap: () => ({
+    story:[
+      `Your knees wobble. The room spins. You sit down. Just for a second...`,
+      `When you wake up, you're back in the sleep pod. The lid is closed.`,
+      `Through the glass, a tired-looking woman sighs and taps the lid.`,
+      `"Let's try that again, shall we?"`,
+    ],
+    after:[`*You ran out of hearts. Every bit of damage in this game comes from a choice, so you can avoid all of it.*`],
+  }),
+};
+
+function ending(id){
+  G.ended = id;
+  const E = ENDINGS[id], T = ENDING_TEXT[id]();
+  const found = recordEnding(id);
+  if (id === 'chorus') clockStart = Date.now();
+  Sound.ending(id);
+  const notes = [F.slotA || has('beep'), F.slotB || F.bFollow, F.slotC || has('music')].filter(Boolean).length;
+  const friends = TRUST_ORDER.filter(w => (G.trust[w] || 0) >= 4).map(w => charName(w));
+  add('ending', `
+    <div class="end-kicker">ENDING ${ENDING_IDS.indexOf(id) + 1} OF 8 · ${esc(E.tag.toUpperCase())}</div>
+    <div class="end-emoji">${E.e}</div>
+    <h2 class="end-title">${esc(E.title)}</h2>
+    ${T.story.map(s => `<p>${fmt(s)}</p>`).join('')}
+    <div class="end-epi"><div class="fl">What happened next</div>${T.after.map(s => `<p>${fmt(s)}</p>`).join('')}</div>
+    <div class="end-stats"><span>Turns: <b>${G.turns}</b></span><span>Hints used: <b>${G.hints}</b></span><span>True notes found: <b>${notes}/3</b></span><span>Best friends: <b>${friends.length ? esc(friends.join(', ')) : 'none yet'}</b></span></div>
+    <div class="t-ends"><div class="fl">Endings found · ${found.length}/8</div>${endGrid(found)}</div>`);
+}
+
+/* =====================================================================
+   HINTS
+   ===================================================================== */
+const HINTS = [
+  [() => !F.out, 'out', `Your pod is open. Maybe it's time to climb out? (Click a choice, type its number, or type anything.)`],
+  [() => !G.vis.corr, 'leave', `Explore! The door out of the Pod Room leads to Corridor B. Search your pod first: pillows and cupholders can hide things.`],
+  [() => !F.vaultOpen && !F.vaultSeen, 'vaultfind', `The signs in Corridor B point up to the Vault Door. That's the way to the surface.`],
+  [() => !F.vaultOpen, 'vault', `The Vault Door wants "the moment it all stopped." What does every clock in this bunker say?`, `Every clock is stuck at 3:17. Type **0317** at the keypad.`],
+  [() => !F.vargaMet, 'varga', `Someone is hiding from the Engine. The Radio Room's sticky note says "ask the goose", and the goose in the Greenhouse (through the Mess Hall) wears a band on its leg.`, `Make friends with the goose (sit quietly, or feed it a Glowcap), read its leg band, then tune the radio to **88.1**. Or go up to the surface and visit the bell tower.`],
+  [() => !F.boxOpen, 'box', `The locked box in the Archive (through the Radio Room) has seven letter dials and a riddle. What fills the whole world above right now?`, `The answer is **SILENCE**. Type it while you're looking at the box.`],
+  [() => has('tape') && !F.knowTruth, 'tape', `You're carrying a tape addressed to you. There's a tape player in the Archive.`],
+  [() => !F.blueprint, 'blue', `The blueprints in the Archive explain how the Choir Engine works, and someone wrote important notes in the margin.`],
+  [() => !F.mopFixed && !has('chip'), 'chip', `MOP in the Maintenance Shaft (through the Greenhouse) is missing a memory chip. VEND-R hides one in slot B4, but only sells it to customers who are NICE to it.`, `Get VEND-R's trust to 3 (compliment its lights, win its riddle, or give it a hug), and collect 3 Bunker Tokens: your pod's cupholder, the Corridor B floor, the Mess Hall couch, the Archive desk, or VEND-R's riddle prize.`],
+  [() => !F.mopFixed, 'givechip', `You're carrying something that belongs inside a little robot's head.`],
+  [() => !has('beep') && !F.slotA, 'beep', `Now that MOP remembers, ask him what else he remembers.`],
+  [() => !F.grateOpen && !F.ventDown, 'grate', `The grate in the Maintenance Shaft leads down to Level D-1. MOP lends his key to people he trusts. There's also a crowbar in the toolbox by the Vault Door.`],
+  [() => !F.bFollow, 'bert', `Geese don't follow just anybody. Patience and snacks work best.`, `Sit quietly near the goose and feed him a Glowcap or a Sadness Pretzel. At trust ${F.grabbedB ? '4 (he remembers that grab, so apologize too)' : '3'}, he'll follow you.`],
+  [() => !F.towerIn, 'tower', `Dr. Varga is hiding in Ashgrove's bell tower, up on the surface. Bring proof of who you are.`],
+  [() => !has('music') && !F.slotC, 'music', `Dr. Varga only gives her music box to someone she trusts a lot (4 or more).`, `Things she values: the truth about what happened, her goose, hearing that the Hum seems lonely, and proof the sounds still exist (a sound jar from Level D-1).`],
+  [() => !F.engineMet, 'engine', `Everything leads down to the Choir Engine on Level D-1, past the Jarchive.`],
+  [() => !F.solvedEcho, 'echo', `The Hum has a riddle about itself. Talk to it at the Engine and ask what it really wants. A book in the library might help.`, `The answer is **ECHO**.`],
+  [() => !allSlots(), 'slots', `The Engine has three tuning slots. Each needs a true note: MOP's First Beep, Bertrand's honk, and Mama's lullaby.`],
+  [() => (G.trust.hum || 0) < 3, 'humtrust', `The Hum doesn't trust you enough yet. What would a lonely machine want to hear?`, `Talk to the Hum. Tell it it sounds lonely, and thank it for keeping the sounds safe.`],
+  [() => true, 'final', `You have everything. At the Choir Engine, play the three true notes together. ✨`],
+];
+
+/* =====================================================================
+   ENGINE
+   ===================================================================== */
+function goScene(id){
+  const sc = SC[id];
+  if (!sc){ console.error('Missing scene', id); return; }
+  G.scene = id;
+  if (sc.enter) sc.enter();
+}
+function gateOK(a, b){
+  if (a === 'pod' && !F.out) return false;
+  if (a === 'maint' && b === 'jars') return !!(F.grateOpen || F.ventDown);
+  if (a === 'vault' && b === 'square') return !!F.vaultOpen;
+  return true;
+}
+function exitsOf(l){ return ADJ[l].filter(to => gateOK(l, to)); }
+function exitChoice(to){
+  const from = G.loc;
+  let t = EXIT_LABEL[from + '>' + to] || `🚶 Go to ${LOCS[to].name}`;
+  if (from === 'maint' && to === 'jars' && F.ventDown && !F.grateOpen) t = '🤸 Slide down the steam vent to Level D-1';
+  return { t, exit:to, do(){ goLoc(to); } };
+}
+function goLoc(to){
+  const from = G.loc;
+  if (from === 'maint' && to === 'jars' && !G.vis.jars) descend();
+  G.loc = to;
+  G.vis[to] = (G.vis[to] || 0) + 1;
+  goScene(to);
+}
+function computeChoices(){
+  const sc = SC[G.scene];
+  let list = (sc.choices ? sc.choices() : []).filter(Boolean);
+  let full = list.slice();
+  if (sc.hub){
+    const ex = exitsOf(G.loc).map(exitChoice);
+    full = list.concat(ex);
+    if (list.length + ex.length <= 5) list = list.concat(ex);
+    else if (ex.length <= 2) list = list.slice(0, 5 - ex.length).concat(ex);
+    else list = list.slice(0, 4).concat([{ t:'🚶 Go somewhere else…', go:'_travel' }]);
+  } else if (list.length > 5){
+    list = list.slice(0, 4).concat([list[list.length - 1]]);
+  }
+  current = list;
+  fullList = full.concat(list.filter(c => !full.includes(c)));
+}
+function runChoice(c){
+  if (c.do) c.do();
+  if (c.go && !G.ended) goScene(c.go);
+}
+function choose(c){
+  if (!c || !G || G.ended) return;
+  Sound.click();
+  beginTurn(c.t);
+  runChoice(c);
+  endTurn();
+}
+function beginTurn(echo){
+  logEl.querySelectorAll('.turn:not(.old)').forEach(el => el.classList.add('old'));
+  curTurn = document.createElement('section');
+  curTurn.className = 'turn';
+  if (echo){ const e = document.createElement('div'); e.className = 'echo'; e.textContent = '› ' + echo; curTurn.appendChild(e); }
+  logEl.appendChild(curTurn);
+}
+function endTurn(meta){
+  if (G && !meta && !G.ended){
+    G.turns++;
+    if (G.hp <= 0) ending('nap');
+  }
+  if (G && !meta && !G.ended) add('', statusHTML());
+  render();
+  scrollToTurn(curTurn);
+  trimLog();
+  if (finePointer && G) inEl.focus({ preventScroll:true });
+}
+function metaTurn(echo, fn){
+  beginTurn(echo);
+  fn();
+  endTurn(true);
+}
+function scrollToTurn(el){
+  if (!el) return;
+  requestAnimationFrame(() => {
+    const top = el.offsetTop - 6;
+    const fits = el.offsetHeight < logEl.clientHeight;
+    logEl.scrollTo({ top: fits ? Math.max(top, el.offsetTop + el.offsetHeight - logEl.clientHeight) : top, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+}
+function trimLog(){
+  const turns = logEl.querySelectorAll('.turn');
+  for (let i = 0; i < turns.length - 70; i++) turns[i].remove();
+}
+function statusHTML(){
+  const hp = '♥'.repeat(G.hp) + `<span class="off">${'♥'.repeat(5 - G.hp)}</span>`;
+  const items = ITEM_IDS.filter(has).map(id => `<span title="${esc(itemName(id))}">${ITEMS[id].e}${G.inv[id] > 1 ? `<sub>${G.inv[id]}</sub>` : ''}</span>`).join(' ') || '<span class="none">empty</span>';
+  const trust = TRUST_ORDER.filter(w => G.trust[w] !== undefined).map(w =>
+    `<span class="tm c-${w}" title="${esc(charName(w))}: trust ${G.trust[w]} of 5">${esc(shortName(w))}<span class="bars">${[0,1,2,3,4].map(i => `<i class="${i < G.trust[w] ? 'on' : ''}"></i>`).join('')}</span></span>`).join('');
+  return `<div class="status" role="group" aria-label="Status">
+    <span class="st-loc">${LOCS[G.loc].e} ${esc(LOCS[G.loc].name.toUpperCase())}</span>
+    <span class="st-hp" aria-label="Health ${G.hp} of 5">${hp}</span>
+    <span class="st-items">🎒 ${items}</span>
+    <span>🪙 ${G.tok}</span>
+    ${F.bFollow ? '<span>🪿 + Bertrand</span>' : ''}
+    ${trust ? `<span class="st-trust">🤝 ${trust}</span>` : ''}
+  </div>`;
+}
+function render(){
+  if (!G) return;
+  if (G.ended){
+    current = []; fullList = [];
+    askEl.textContent = 'THE END';
+    choicesEl.innerHTML = '';
+    const opts = [
+      { t:'▶ Play again (new character)', fn: showTitle },
+      { t:`↻ Try again as ${G.name}`, fn: () => start(G.name, G.skill, G.skillLabel) },
+    ];
+    opts.forEach((o, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'choice';
+      b.innerHTML = `<span class="k">${i + 1}</span><span class="t"></span>`;
+      b.querySelector('.t').textContent = o.t;
+      b.addEventListener('click', o.fn);
+      choicesEl.appendChild(b);
+    });
+  } else {
+    computeChoices();
+    askEl.textContent = 'WHAT DO YOU DO?';
+    choicesEl.innerHTML = '';
+    current.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'choice';
+      b.innerHTML = `<span class="k">${i + 1}</span><span class="t"></span>${c.sk ? '<span class="sk">SKILL</span>' : ''}`;
+      b.querySelector('.t').textContent = c.t;
+      b.addEventListener('click', () => choose(c));
+      choicesEl.appendChild(b);
+    });
+  }
+  document.querySelectorAll('[data-cmd="save"]').forEach(b => b.disabled = !!G.ended);
+  const z = zoneNow();
+  Sound.zone(G.ended === 'chorus' ? 'bunker' : z);
+  scope.setZone(G.ended === 'chorus' ? 'chorus' : z);
+  const db = z === 'booth' ? 30 : LOCS[G.loc].db;
+  dblEl.textContent = G.ended === 'chorus' ? 'AMBIENT 64 dB · SOUND RESTORED' : (db === 0 ? 'AMBIENT 0 dB · SILENT' : `AMBIENT ${db} dB`);
+}
+
+/* =====================================================================
+   TYPED INPUT
+   ===================================================================== */
+const STOP = new Set('the a an to at my your with and on in of i me it is go walk head into onto for this that some please then just around again now'.split(' '));
+const SYN = {
+  grab:'take', get:'take', snatch:'take', pick:'take', collect:'take', pickup:'take',
+  speak:'talk', chat:'talk', converse:'talk', examine:'look', inspect:'look', check:'look', study:'look', view:'look', read:'look',
+  explore:'search', rummage:'search', feed:'offer', give:'offer',
+  vending:'vendr', machine:'vendr', 'vend-r':'vendr', vender:'vendr', robot:'mop', janitor:'mop',
+  bird:'goose', bertrand:'goose', geese:'goose', mushrooms:'mushroom', shroom:'mushroom', glowcap:'mushroom', glowcaps:'mushroom',
+  scientist:'varga', doctor:'varga', ines:'varga', kid:'pip', child:'pip', leave:'step', back:'step', exit:'step', bye:'goodbye',
+};
+function words(s){
+  return s.toLowerCase().replace(/[^a-z0-9\s'-]/g, ' ').replace(/'/g, '').split(/\s+/).filter(w => w && !STOP.has(w)).map(w => SYN[w] || w);
+}
+function matchChoice(t, list){
+  const iw = words(t);
+  if (!iw.length) return null;
+  let best = null, bestScore = 0, second = null;
+  for (const c of list){
+    const cw = words(c.t);
+    let s = 0;
+    for (const w of iw){
+      if (cw.some(x => x === w || (w.length >= 4 && x.length >= 4 && (x.includes(w) || w.includes(x))))) s++;
+    }
+    if (!s) continue;
+    const score = s / iw.length + s * 0.001;
+    if (score > bestScore){ second = best && bestScore === score ? best : null; best = c; bestScore = score; }
+    else if (score === bestScore) second = c;
+  }
+  if (!best || bestScore < 0.5) return null;
+  if (second && second !== best) return { ambiguous:true, a:best, b:second };
+  return best;
+}
+function findItem(s){
+  const map = [['shatter',/shatter|black key|glass key/],['badge',/badge|\bid\b/],['flash',/flashlight|torch/],['bat',/batter/],['glow',/glowcap|mushroom/],
+    ['soup',/soup/],['pretz',/pretzel/],['chip',/chip/],['tape',/tape|cassette/],['crowbar',/crowbar/],['chalk',/chalk/],['book',/book/],
+    ['jar',/jar|burp/],['beep',/beep|cartridge/],['music',/music|lullaby/],['key',/\bkey\b/]];
+  for (const [id, re] of map) if (re.test(s)) return id;
+  return null;
+}
+function eat(id){
+  if (!has(id)){ p(`You don't have any ${id === 'glow' ? 'Glowcaps' : id === 'soup' ? 'soup' : 'pretzels'}.`); return true; }
+  take(id);
+  if (id === 'soup'){ p(`You slurp the Mystery Soup. It tastes like tomato, then chicken, then... a birthday? The mystery deepens.`); heal(2); }
+  if (id === 'glow'){ p(`You eat a Glowcap. It tastes like blueberries and electricity. For a second, your fingertips glow.`); heal(1); }
+  if (id === 'pretz'){ p(`You eat the Sadness Pretzels. They taste exactly like a Monday morning. You feel... exactly the same.`); }
+  return true;
+}
+function useItem(id){
+  if (id === 'soup' || id === 'glow' || id === 'pretz') return eat(id);
+  if (id === 'bat') return installBat();
+  if (id === 'book'){ bookPassage(); return true; }
+  if (id === 'tape'){ if (G.loc === 'archive') goScene('tape'); else p(`You need a tape player. There's one in the Archive.`); return true; }
+  return false;
+}
+function hug(t){
+  if (/(mop|robot)/.test(t) && G.loc === 'maint'){ if (!F.hugMop){ F.hugMop = 1; tr('mop', 1); } say('mop', `Oh! A hug! I've never had one before. I'm going to remember this forever${F.mopFixed ? '' : '. Well. As long as I can remember anything'}.`); return true; }
+  if (/(vend|machine)/.test(t) && G.loc === 'mess' && !F.pried){ if (!F.hugVendr){ F.hugVendr = 1; tr('vendr', 1); } say('vendr', `Darling! In PUBLIC?! ...Do it again.`); return true; }
+  if (/(goose|bertrand|bird)/.test(t) && (G.loc === 'green' || F.bFollow)){
+    if ((G.trust.bert || 0) >= 3){ F.hugBert = 1; p(`${charName('bert')} allows it. For exactly two seconds. Then he nibbles your ear, which in Goose means "you're family."`); }
+    else p(`${charName('bert')} hisses like a deflating tire. Not yet, buddy. Not yet.`);
+    return true;
+  }
+  if (/(varga|doctor|scientist|ines)/.test(t) && G.loc === 'tower' && F.towerIn){ if (!F.hugVarga){ F.hugVarga = 1; tr('varga', 1); } p(`Dr. Varga freezes... then hugs you back, hard. "I'm so sorry," she whispers. "For all of it."`); return true; }
+  if (/(pip|kid)/.test(t) && G.loc === 'square' && F.pipMet){ say('pip', `UR WEIRD. I LIKE IT.`); return true; }
+  p(`You hug the air. The air does not hug back.`);
+  return true;
+}
+function violence(t){
+  if (/(vend|machine)/.test(t) && G.loc === 'mess' && !F.pried){
+    if (F.kickedVendr){ say('vendr', `Do it again and I'm calling the manager. I AM the manager.`); return true; }
+    F.kickedVendr = 1; tr('vendr', -2); hurt(1, '(your toe!)');
+    say('vendr', `OW! HOW DARE YOU! I am a *delicate machine*! I will REMEMBER this!`);
+    return true;
+  }
+  if (/(goose|bertrand|bird)/.test(t) && (G.loc === 'green' || F.bFollow)){ p(`You take one step toward ${charName('bert')} with bad intentions. He takes one step toward you with WORSE intentions. You back off. Wise.`); return true; }
+  if (/(mop|robot)/.test(t) && G.loc === 'maint'){ tr('mop', -1); say('mop', `Oof! Pardon me! ...Was that on purpose? I'll pretend it wasn't.`); return true; }
+  if (/(engine|pipe|glass)/.test(t) && G.loc === 'engine'){ hurt(1, '(the Engine zapped you)'); say('hum', `Ow! ...Wait, that hurt YOU, not me. Please don't do that.`); return true; }
+  if (/(door|wall|vault|grate|shelf|pod|keypad)/.test(t)){ hurt(1, '(you hit a very hard thing)'); p(`It does not move. You, however, are now in pain.`); return true; }
+  p(`You swing at the air dramatically. The air wins.`);
+  return true;
+}
+function globalVerbs(t){
+  const quiet = zoneNow() === 'surface';
+  const deep = zoneNow() === 'deep';
+  if (/^(eat|drink|slurp|munch|chew|consume)\b/.test(t) || /^use\b.*(soup|glowcap|mushroom|pretzel)/.test(t)){
+    if (/soup/.test(t)) return eat('soup');
+    if (/(glowcap|mushroom|shroom)/.test(t)) return eat('glow');
+    if (/pretzel/.test(t)) return eat('pretz');
+    if (/pudding/.test(t) && G.loc === 'mess') return pudding();
+    if (/(cake|birthday)/.test(t) && G.loc === 'mess'){ p(`You eat a bite of the birthday cake. It's 23 days old. It's... honestly still pretty good? Happy birthday, Ga—.`); return true; }
+    if (/granola/.test(t) && F.toolbox && G.loc === 'vault'){ p(`You take one bite of the 2009 granola bar. Somewhere, a dentist screams.`); hurt(1, '(that granola bar)'); return true; }
+    p(`You can't eat that. Well, you *could*. But you shouldn't.`);
+    return true;
+  }
+  if (/batter/.test(t)) return installBat();
+  if (/(flashlight|torch)/.test(t) && !/^(examine|inspect|look at|check)\b/.test(t)){
+    if (!has('flash')){ p(`You don't have a flashlight.${G.loc === 'pod' && !F.locker ? ' Maybe check the emergency locker?' : ''}`); return true; }
+    if (F.lit){ p(`*Click.* Bright, heroic light. You feel 12% braver.`); return true; }
+    if (G.skill === 'tech' && /(fix|repair|tinker|hotwire)/.test(t)) return techFlash();
+    p(`*Click.* Nothing. It's dead. It needs batteries${G.skill === 'tech' ? ", or someone who's good with machines" : ''}.`);
+    return true;
+  }
+  if (/^read\b/.test(t) && /(book|echo)/.test(t) && has('book')){ bookPassage(); return true; }
+  if (/^(play|listen)\b.*tape/.test(t) && has('tape')) return useItem('tape');
+  if (/^(open|unscrew|use)\b.*(jar|burp)/.test(t) && has('jar')){
+    if (G.loc === 'tower' && F.towerIn && !F.vargaKnowsJars) return jarShow();
+    p(`You grip the lid... then stop. Gerald's masterpiece deserves the right audience. Somebody who doesn't believe the sounds still exist, maybe.`);
+    return true;
+  }
+  const m = t.match(/^(examine|inspect|x|look at|check)\s+(?:the |my |your )?(.+)$/);
+  if (m){ const id = findItem(m[2]); if (id && has(id)){ const it = ITEMS[id]; p(`${it.e} **${esc(itemName(id))}**: ${typeof it.d === 'function' ? it.d() : it.d}`); return true; } }
+  if (/^(hug|cuddle|pet|pat|high five|high-five)\b/.test(t)) return hug(t);
+  if (/^(kick|punch|hit|smack|slap|attack|fight|bite|smash)\b/.test(t) && !/jars?\b/.test(t)) return violence(t);
+  if (/^(dance|boogie|breakdance|floss)/.test(t)){
+    p(quiet ? `You bust out your best moves in total silence. A mail carrier stops to watch. ${F.pipMet ? 'Pip joins in.' : 'A kid on a bike gives you a thumbs up.'}`
+      : deep ? `You dance. The hum changes rhythm to match your steps, and every jar on the shelves rattles along. Okay, that's actually amazing.`
+      : `You do a little dance. Somewhere below, the hum shifts its rhythm to match you. Creepy. But also kind of a banger.`);
+    return true;
+  }
+  if (/^(sing|hum)\b/.test(t)){ p(quiet ? `You sing your heart out. Nothing comes out. Not one note.` : `You sing. Your voice bounces down the concrete halls... and from far below, the hum hums the same tune right back at you.`); return true; }
+  if (/^(shout|scream|yell|holler)/.test(t) || /^a{3,}h*$/.test(t)){ p(quiet ? `You scream at the top of your lungs. **Nothing.** Not even a squeak. A pigeon looks at you with pity.` : `**AAAAAAAAH!** ...aaaah... aaah... aah... *(The echo takes a very long time to stop. Interesting.)*`); return true; }
+  if (/^(clap|whistle|snap|stomp)/.test(t)){ p(quiet ? `Nothing. Not a clap, not a whistle. Your hands feel like they're lying to you.` : `*Clap!* The sound rings out. Down here, sound still works.`); return true; }
+  if (/^(sleep|nap|rest|lie down)/.test(t)){ p(`Absolutely not. You JUST woke up. You've had enough sleep for, like, 23 days.`); return true; }
+  if (/^(cry|sob|weep)/.test(t)){ p(`You have a little cry. Honestly? Valid. You feel a bit better afterward.`); return true; }
+  if (/^(jump|hop|backflip|flip)/.test(t)){ p(G.skill === 'parkour' ? `You backflip off the nearest wall and stick the landing. Nobody saw. Tragic.` : `You jump. Gravity is still working. Good to know.`); return true; }
+  if (/^(wait|z|stand still|do nothing)$/.test(t)){ p(`You wait. Time doesn't pass. Every clock is still stuck at 3:17. Spooky.`); return true; }
+  if (/^(laugh|lol|haha)/.test(t)){ p(quiet ? `You laugh. Silently. It still counts.` : `You laugh, and it echoes. Somewhere below, the hum tries to laugh too. It sounds like a fridge falling down the stairs.`); return true; }
+  if (/^honk/.test(t)){ p(F.bFollow ? `You honk. ${charName('bert')} looks at you with deep, deep disappointment. Amateur.` : quiet ? `You honk. Nothing comes out. Only geese get that privilege now, apparently.` : `You honk. It's not great. A goose would be embarrassed for you.`); return true; }
+  if (/^lick\b/.test(t)){ p(`You lick it. It tastes like old pennies and regret.`); return true; }
+  if (/^(smell|sniff)/.test(t)){ p(G.loc === 'mess' ? `Old cake, mystery soup, and something from the fridge you don't want to think about.` : G.loc === 'green' ? `Tomatoes, wet dirt, and goose.` : deep ? `Ozone and warm glass. Like a thunderstorm in a jar. Which... there probably is.` : quiet ? `Fresh air. It smells normal. It just doesn't SOUND like anything.` : `Concrete and old pennies. Classic bunker.`); return true; }
+  if (/^(listen|hear)\b/.test(t)){ p(quiet ? `You listen as hard as you can. Nothing. Not wind, not birds, not cars. It's the loudest silence you've ever heard.` : deep ? `The hum is everywhere. Under it: billions of tiny sounds, buzzing inside their jars, waiting.` : `The hum. Low and steady, coming from somewhere far below. If you listen really hard, it almost sounds like breathing.`); return true; }
+  if (/^(who am i|what is my name|whats my name)/.test(t)){ p(`You're **${N()}**. Your badge seems very sure about it.${F.knowTruth ? ' Also: former night-shift intern and accidental button-presser.' : ''}`); return true; }
+  if (/^(xyzzy|plugh|plover)$/.test(t)){ p(`A hollow voice says: "Wrong game, buddy."`); return true; }
+  if (/^(die|give up|quit)\b/.test(t)){ p(`Nope. Heroes don't give up. (If you want to start over, type **restart**.)`); return true; }
+  if (/\b(fuck|shit|damn|crap|bitch)\b/.test(t)){ p(`Whoa, language! ${F.mopMet ? 'Somewhere, MOP gasps and reaches for the soap.' : 'Somewhere, a tiny cleaning robot just felt a disturbance.'}`); return true; }
+  if (/^(pray|meditate|think)/.test(t)){ p(`You close your eyes and think hard. ${G.skill === 'memory' ? "Your perfect memory replays everything you've seen... " : ''}Type **hint** if you want a nudge.`); return true; }
+  if (/^(press|push)\b.*(red button|big button|brew)/.test(t)){ p(`You look around for a big red button to press. Your badge stares up at you: *PLEASE DO NOT TOUCH ANYTHING.* ...Fair.`); return true; }
+  return false;
+}
+function lookAround(){
+  const sc = SC[G.scene];
+  if (sc.hub) SC[G.loc].enter();
+  else p(`You're in the **${LOCS[G.loc].name}**, in the middle of something. Pick a choice below.`);
+  const ex = exitsOf(G.loc);
+  if (ex.length && sc.hub) p(`*Exits: ${ex.map(l => LOCS[l].name).join(', ')}.*`);
+}
+function goByName(t){
+  const moving = /^(go|walk|head|run|travel|enter|visit|return|climb|move|leave|back to|go back to|take me to)\b/.test(t);
+  for (const l of LOC_IDS){
+    for (const w of LOC_WORDS[l]){
+      const re = new RegExp('\\b' + w.replace(/[-]/g, '\\-') + '\\b');
+      if ((moving && re.test(t)) || t === w){
+        if (l === G.loc){ p(`You're already in the ${LOCS[l].name}.`); return true; }
+        if (!SC[G.scene].hub){ p(`You're in the middle of something. Finish up or step back first.`); return true; }
+        if (exitsOf(G.loc).includes(l)){ note('→ ' + esc(exitChoice(l).t), 'interp'); goLoc(l); return true; }
+        const ex = exitsOf(G.loc);
+        p(`You can't get to ${G.vis[l] ? 'the ' + LOCS[l].name : 'there'} from here. Exits: ${ex.map(x => LOCS[x].name).join(', ') || 'none yet'}.`);
+        return true;
+      }
+    }
+  }
+  if (moving){ const ex = exitsOf(G.loc); p(`Go where? From here you can reach: ${ex.map(x => LOCS[x].name).join(', ') || 'nowhere yet'}.`); return true; }
+  return false;
+}
+function fallback(){
+  const surf = zoneNow() === 'surface';
+  const lines = surf ? [
+    `You try that. Nothing happens, and it's extra awkward with no sound.`,
+    `Hmm. That doesn't work. A passing mail carrier shrugs at you. (Try a numbered choice, or type **hint**.)`,
+    `Nope. The silent world doesn't react. Type **help** for commands.`,
+  ] : [
+    `You try that. The universe shrugs. (Try a numbered choice, or type **hint**.)`,
+    `Hmm. Nothing happens. Somewhere far below, the hum sounds faintly amused.`,
+    `That doesn't seem to work here. Type **help** for the list of commands.`,
+    `Bold move. Nothing happens, though.`,
+  ];
+  p(lines[G.c.huh++ % lines.length]);
+}
+function resolve(t){
+  const sc = SC[G.scene];
+  if (sc.parse && sc.parse(t)) return true;
+  const hub = SC[G.loc];
+  if (hub !== sc && hub.parse && hub.parse(t)) return true;
+  if (/^(l|look|look around|where am i|describe|surroundings)$/.test(t)){ lookAround(); return true; }
+  if (globalVerbs(t)) return true;
+  const c = matchChoice(t, fullList);
+  if (c){
+    if (c.ambiguous){ p(`Did you mean **${esc(c.a.t)}** or **${esc(c.b.t)}**? Try clicking one, or type its number.`); return true; }
+    note('→ ' + esc(c.t), 'interp');
+    runChoice(c);
+    return true;
+  }
+  if (goByName(t)) return true;
+  if (/^(hello|hi|hey|yo|sup)\b/.test(t)){ p(zoneNow() === 'surface' ? `You say hi. No sound comes out. Someone waves back anyway.` : `"Hello?" you say. Far below, the hum hums back. Two notes. Like a hello.`); return true; }
+  return false;
+}
+function handleInput(raw){
+  const t0 = raw.trim().slice(0, 80);
+  if (!t0 || !G) return;
+  const t = t0.toLowerCase().replace(/[.!?]+$/, '').replace(/\s+/g, ' ').trim();
+  if (G.ended){
+    if (/^(restart|play again|again|new game|yes)$/.test(t)) return showTitle();
+    if (/^load\b/.test(t)) return cmdLoad(t0.replace(/^load\s*/i, ''));
+    metaTurn(t0, () => p(`This story is over! Pick **Play again** below. There ${8 - getEndings().length === 1 ? 'is 1 ending' : 'are ' + (8 - getEndings().length) + ' endings'} you haven't found yet.`));
+    return;
+  }
+  if (/^[1-9]$/.test(t)){ const c = current[+t - 1]; if (c) return choose(c); }
+  if (/^(i|inv|inventory|bag|backpack|items|pockets)$/.test(t)) return cmdInventory();
+  if (/^(m|map)$/.test(t)) return cmdMap();
+  if (/^(h|hint|hints|clue|help me|stuck|im stuck|i'm stuck)$/.test(t)) return cmdHint();
+  if (/^(save|save game)$/.test(t)) return cmdSave();
+  if (/^load\b/.test(t)) return cmdLoad(t0.replace(/^load\s*/i, ''));
+  if (/^(help|commands|\?|how do i play)$/.test(t)) return cmdHelp();
+  if (/^(status|stats|health|hp|trust)$/.test(t)) return cmdStatus();
+  if (/^(restart|start over|new game)$/.test(t)) return choose({ t:t0, go:'restart_confirm' });
+  beginTurn(t0);
+  if (!resolve(t)) fallback();
+  endTurn();
+}
+
+/* =====================================================================
+   COMMANDS
+   ===================================================================== */
+function cmdInventory(){
+  metaTurn('inventory', () => {
+    const btn = id => {
+      const can = (['soup','glow','pretz','book'].includes(id)) || (id === 'bat' && has('flash') && !F.lit) || (id === 'tape' && G.loc === 'archive');
+      const label = { soup:'EAT', glow:'EAT', pretz:'EAT', bat:'PUT IN FLASHLIGHT', book:'READ', tape:'PLAY' }[id];
+      return can ? `<button class="mini" type="button" data-act="use:${id}">${label}</button>` : '';
+    };
+    const rows = ITEM_IDS.filter(has).map(id => {
+      const it = ITEMS[id], n = G.inv[id];
+      return `<div class="inv-row"><span class="ie">${it.e}</span><div><b>${esc(itemName(id))}${n > 1 ? ` ×${n}` : ''}</b><small>${fmt(typeof it.d === 'function' ? it.d() : it.d)}</small></div>${btn(id)}</div>`;
+    }).join('');
+    const chip = (e, name, state) => `<span class="nchip ${state}">${e} ${name}${state === 'placed' ? ' ✓ in slot' : state === 'have' ? ' ✓' : ''}</span>`;
+    const notes = F.blueprint ? `<div class="inv-notes"><span class="fl">True notes</span>${chip('📟', 'First Beep', F.slotA ? 'placed' : has('beep') ? 'have' : '')}${chip('🪿', 'Honk', F.slotB ? 'placed' : F.bFollow ? 'have' : '')}${chip('🎶', 'Lullaby', F.slotC ? 'placed' : has('music') ? 'have' : '')}</div>` : '';
+    add('card', `<h3>🎒 Inventory</h3>
+      <div class="inv-meta"><span>${SKILLS[G.skill].e} Skill: <b>${esc(G.skillLabel)}</b></span><span>🪙 Bunker Tokens: <b>${G.tok}</b></span><span>♥ Health: <b>${G.hp}/5</b></span>${F.bFollow ? `<span>🪿 Companion: <b>${esc(charName('bert'))}</b></span>` : ''}</div>
+      ${rows ? `<div class="inv-list">${rows}</div>` : `<p class="muted">Your pockets are empty. Even the lint left.</p>`}${notes}`);
+  });
+}
+function cmdMap(){
+  metaTurn('map', () => {
+    const known = new Set();
+    LOC_IDS.forEach(l => { if (G.vis[l]){ known.add(l); ADJ[l].forEach(n => known.add(n)); } });
+    const html = MAP.map(z => {
+      const any = z.rows.flat().some(l => l && known.has(l));
+      const cells = z.rows.map(r => r.map(l => {
+        if (!l) return `<div class="cell empty"></div>`;
+        if (G.vis[l]) return `<div class="cell${l === G.loc ? ' here' : ''}"><span class="ce">${LOCS[l].e}</span>${esc(LOCS[l].name)}</div>`;
+        if (known.has(l)) return `<div class="cell fog"><span class="ce">❔</span>???</div>`;
+        return `<div class="cell empty"></div>`;
+      }).join('')).join('');
+      return `<div class="zone${any ? '' : ' unknown'}"><div class="fl">${any ? esc(z.title) : '??? · unexplored'}</div><div class="grid3">${cells}</div></div>`;
+    }).join('');
+    const count = LOC_IDS.filter(l => G.vis[l]).length;
+    add('card', `<h3>🗺️ Map</h3>${html}<p class="muted small">Places visited: ${count}/${LOC_IDS.length}. Dashed boxes are places you know about but haven't visited.</p>`);
+  });
+}
+function cmdHint(){
+  metaTurn('hint', () => {
+    G.hints++;
+    const sc = SC[G.scene];
+    let key, tiers;
+    if (sc.hint){ key = 's:' + G.scene; tiers = sc.hint(); }
+    else { const h = HINTS.find(h => h[0]()); key = h[1]; tiers = h.slice(2).filter(Boolean); }
+    const n = G.tier[key] || 0;
+    G.tier[key] = n + 1;
+    const text = tiers[Math.min(n, tiers.length - 1)];
+    add('card', `<h3>💡 Hint</h3><p>${fmt(text)}</p>${tiers.length > 1 && n === 0 ? '<p class="muted small">Still stuck? Ask for another hint to get a bigger one.</p>' : ''}`);
+  });
+}
+function saveCard(){
+  const code = makeCode();
+  add('card', `<h3>💾 Save code</h3>
+    <p>Copy this code somewhere safe. To continue later, type <b>load</b> followed by the code, or paste it on the title screen.</p>
+    <textarea class="save-code" readonly rows="3" id="save-${Date.now()}">${esc(code)}</textarea>
+    <div class="row"><button class="mini" type="button" data-act="copy" data-code="${esc(code)}">COPY CODE</button><span class="muted small">Saved at: ${esc(LOCS[G.loc].name)}. Loading puts you back at the start of this location.</span></div>`);
+}
+function cmdSave(){ metaTurn('save', saveCard); }
+function cmdLoad(code){
+  if (!code){ metaTurn('load', () => p(`To load a game, type **load** followed by your save code. Example: *load B9-…*`)); return; }
+  const ok = tryLoad(code);
+  if (!ok) metaTurn('load', () => p(`That save code didn't work. Check that you copied the whole thing (it starts with **B9-**).`));
+}
+function cmdHelp(){
+  metaTurn('help', () => add('card', `<h3>❔ How to play</h3>
+    <p>Click a choice, type its number, or type anything you want to try: <i>"hug the robot"</i>, <i>"eat soup"</i>, <i>"go to the radio room"</i>, <i>"listen"</i>. Riddles and codes are answered by typing.</p>
+    <div class="help-grid">
+      <code>inventory</code><span>What you're carrying, your skill, and usable items</span>
+      <code>map</code><span>Places you've visited</span>
+      <code>hint</code><span>A nudge. Ask twice for a bigger one</span>
+      <code>save</code><span>Get a code to continue later</span>
+      <code>load CODE</code><span>Continue a saved game</span>
+      <code>look</code><span>Look around again</span>
+      <code>status</code><span>Health, items and trust</span>
+      <code>restart</code><span>Start a new game</span>
+    </div>
+    <p class="muted small">No dice, no luck. Every result comes from your choices. Characters remember what you do.</p>`));
+}
+function cmdStatus(){ metaTurn('status', () => add('', statusHTML())); }
+
+/* =====================================================================
+   SAVE / LOAD
+   ===================================================================== */
+const B32 = '0123456789abcdefghijklmnopqrstuv';
+function bitsEnc(arr){ let s = ''; for (let i = 0; i < arr.length; i += 5){ let v = 0; for (let j = 0; j < 5; j++) if (arr[i + j]) v |= 1 << j; s += B32[v]; } return s; }
+function bitsDec(str, n){ const out = []; for (let i = 0; i < n; i++){ const v = B32.indexOf(str[Math.floor(i / 5)] || '0'); out.push(((v >> (i % 5)) & 1) === 1); } return out; }
+function b64e(str){ const bytes = new TextEncoder().encode(str); let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); }); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64d(s){ s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); }
+function cks(s){ let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 1296; return h.toString(36).padStart(2, '0'); }
+function makeCode(){
+  const parts = [
+    'v1', G.name, G.skill, G.skillLabel, LOC_IDS.indexOf(G.loc), G.hp, G.tok,
+    ITEM_IDS.map(i => Math.min(9, G.inv[i] || 0)).join(''),
+    bitsEnc(FLAGS.map(f => !!F[f])),
+    bitsEnc(LOC_IDS.map(l => !!G.vis[l])),
+    TRUST_ORDER.map(w => G.trust[w] === undefined ? 'x' : G.trust[w]).join(''),
+    [G.stock.soup, G.stock.bat, G.stock.pretz, G.stock.b4, G.c.glowPicked, Math.min(9, G.c.wrong)].join(''),
+    G.hints.toString(36), G.turns.toString(36),
+  ];
+  const payload = b64e(parts.join('|'));
+  return 'B9-' + payload + '.' + cks(payload);
+}
+function decodeCode(code){
+  code = code.replace(/\s+/g, '');
+  if (!/^B9-/i.test(code)) return null;
+  const body = code.slice(3), dot = body.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = body.slice(0, dot), sum = body.slice(dot + 1).toLowerCase();
+  if (cks(payload) !== sum) return null;
+  let parts;
+  try { parts = b64d(payload).split('|'); } catch (e) { return null; }
+  if (parts.length !== 14 || parts[0] !== 'v1' || !SKILLS[parts[2]]) return null;
+  const g = freshState(parts[1].slice(0, 16), parts[2], parts[3].slice(0, 24));
+  g.loc = LOC_IDS[+parts[4]] || 'pod';
+  g.hp = Math.max(1, Math.min(5, +parts[5] || 1));
+  g.tok = Math.max(0, Math.min(9, +parts[6] || 0));
+  ITEM_IDS.forEach((id, i) => { const n = +(parts[7][i] || 0); if (n) g.inv[id] = n; });
+  bitsDec(parts[8], FLAGS.length).forEach((on, i) => { if (on) g.F[FLAGS[i]] = 1; });
+  bitsDec(parts[9], LOC_IDS.length).forEach((on, i) => { if (on) g.vis[LOC_IDS[i]] = 2; });
+  TRUST_ORDER.forEach((w, i) => { const ch = parts[10][i]; if (ch && ch !== 'x') g.trust[w] = Math.max(0, Math.min(5, +ch)); });
+  const s = parts[11];
+  g.stock = { soup:+s[0] || 0, bat:+s[1] || 0, pretz:+s[2] || 0, b4:+s[3] || 0 };
+  g.c.glowPicked = +s[4] || 0; g.c.wrong = +s[5] || 0;
+  g.hints = parseInt(parts[12], 36) || 0; g.turns = parseInt(parts[13], 36) || 0;
+  g.vis[g.loc] = 2;
+  return g;
+}
+function tryLoad(code){
+  const g = decodeCode(code);
+  if (!g) return false;
+  G = g; F = G.F;
+  logEl.innerHTML = '';
+  dockEl.hidden = false; setTools(true); Sound.start();
+  beginTurn(null);
+  add('intro', `<span class="intro-name">${N()}</span><span class="intro-skill">${SKILLS[G.skill].e} ${esc(G.skillLabel)}</span>`);
+  note(`💾 Save loaded. Welcome back, ${N()}.`, 'meet');
+  if (G.loc === 'pod' && !F.out) goScene('pod_wake');
+  else goScene(G.loc);
+  add('', statusHTML());
+  endTurn(true);
+  return true;
+}
+
+/* =====================================================================
+   ENDINGS TRACKER (per-browser convenience)
+   ===================================================================== */
+function getEndings(){
+  try { const v = JSON.parse(localStorage.getItem('bunker9.endings') || '[]'); return Array.isArray(v) ? v.filter(x => ENDINGS[x]) : []; }
+  catch (e) { return []; }
+}
+function recordEnding(id){
+  const list = getEndings();
+  if (!list.includes(id)) list.push(id);
+  try { localStorage.setItem('bunker9.endings', JSON.stringify(list)); } catch (e) {}
+  return list;
+}
+function endGrid(found){
+  return `<div class="eg">${ENDING_IDS.map(id => found.includes(id)
+    ? `<div class="got"><span class="ee">${ENDINGS[id].e}</span>${esc(ENDINGS[id].title)}</div>`
+    : `<div><span class="ee">${id === 'chorus' ? '★' : '?'}</span>${id === 'chorus' ? 'SECRET' : '???'}</div>`).join('')}</div>`;
+}
+
+/* =====================================================================
+   SOUND (starts after the first click; the surface is silent on purpose)
+   ===================================================================== */
+const Sound = {
+  ctx:null, on:true, humGain:null, started:false,
+  start(){
+    if (this.started) { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+      const g = this.ctx.createGain(); g.gain.value = 0; g.connect(this.ctx.destination);
+      const o1 = this.ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = 55;
+      const o2 = this.ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 110.7;
+      const g2 = this.ctx.createGain(); g2.gain.value = 0.3;
+      o1.connect(g); o2.connect(g2); g2.connect(g); o1.start(); o2.start();
+      this.humGain = g; this.started = true;
+    } catch (e) { this.ctx = null; }
+  },
+  zone(z){
+    if (!this.humGain) return;
+    const target = !this.on ? 0 : z === 'deep' ? (G && G.loc === 'engine' ? 0.09 : 0.065) : z === 'bunker' ? 0.035 : 0;
+    try { this.humGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.5); } catch (e) {}
+  },
+  tone(freq, dur, type, vol, slideTo){
+    if (!this.ctx || !this.on) return;
+    try {
+      const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = type || 'square'; o.frequency.setValueAtTime(freq, t);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      g.gain.setValueAtTime(vol || 0.04, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(this.ctx.destination); o.start(t); o.stop(t + dur + 0.03);
+    } catch (e) {}
+  },
+  click(){ if (zoneNow() !== 'surface') this.tone(620, 0.035, 'square', 0.018); },
+  honk(){ this.tone(330, 0.24, 'sawtooth', 0.07, 230); setTimeout(() => this.tone(300, 0.2, 'sawtooth', 0.06, 210), 130); },
+  beep(){ this.tone(1320, 0.14, 'sine', 0.05); },
+  lullaby(){ [659, 587, 523, 587, 659, 659, 659].forEach((f, i) => setTimeout(() => this.tone(f * 2, 0.32, 'triangle', 0.035), i * 260)); },
+  ending(id){
+    const up = { chorus:[523,659,784,1047,1319], half:[523,659,784], loud:[200,180,160,140,120] }[id] || [392,330,262];
+    up.forEach((f, i) => setTimeout(() => this.tone(f, 0.5, id === 'loud' ? 'sawtooth' : 'triangle', 0.04), i * 180));
+  },
+};
+sndBtn.addEventListener('click', () => {
+  Sound.on = !Sound.on;
+  sndBtn.setAttribute('aria-pressed', String(Sound.on));
+  sndBtn.querySelector('.ic').textContent = Sound.on ? '🔊' : '🔇';
+  if (Sound.on) Sound.start();
+  Sound.zone(zoneNow());
+});
+
+/* =====================================================================
+   SOUND METER (oscilloscope strip): wiggles in the bunker, flat on the surface
+   ===================================================================== */
+const scope = {
+  cv: document.getElementById('scope'), amp:6, target:6, t:0, mode:'bunker', colors:null, frame:0,
+  setZone(z){ this.mode = z; this.target = z === 'surface' ? 0 : z === 'booth' ? 3 : z === 'deep' ? (G && G.loc === 'engine' ? 15 : 10) : z === 'chorus' ? 13 : 6; if (reduceMotion){ this.amp = this.target; this.draw(); } },
+  readColors(){ const cs = getComputedStyle(document.documentElement); this.colors = { line:cs.getPropertyValue('--line').trim(), hum:cs.getPropertyValue('--hum').trim(), amber:cs.getPropertyValue('--amber').trim(), faint:cs.getPropertyValue('--faint').trim() }; },
+  draw(){
+    const cv = this.cv, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    if (!this.colors || this.frame % 90 === 0) this.readColors();
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    c.strokeStyle = this.colors.line; c.lineWidth = 1; c.beginPath();
+    for (let x = 0; x < w; x += 22){ c.moveTo(x + 0.5, 0); c.lineTo(x + 0.5, h); }
+    c.moveTo(0, h / 2 + 0.5); c.lineTo(w, h / 2 + 0.5);
+    c.stroke();
+    this.amp += (this.target - this.amp) * 0.04;
+    const a = Math.min(this.amp, h / 2 - 3), t = this.t;
+    c.strokeStyle = this.mode === 'surface' && this.amp < 0.4 ? this.colors.faint : this.mode === 'chorus' ? this.colors.amber : this.colors.hum;
+    c.lineWidth = 1.6; c.beginPath();
+    for (let x = 0; x <= w; x += 2){
+      const k = x / w;
+      let y = Math.sin(k * 19 + t * 2) * 0.55 + Math.sin(k * 43 - t * 3.1) * 0.25 + Math.sin(k * 7 + t * 0.7) * 0.3;
+      if (this.amp > 9) y *= 1 + 0.35 * Math.sin(k * 95 + t * 7);
+      const yy = h / 2 + a * y;
+      if (x === 0) c.moveTo(x, yy); else c.lineTo(x, yy);
+    }
+    c.stroke();
+    this.t += 0.016; this.frame++;
+  },
+};
+function loop(){
+  if (!document.hidden) scope.draw();
+  if (G && G.ended === 'chorus' && clockStart){
+    const mins = 18 + Math.floor((Date.now() - clockStart) / 60000);
+    clkEl.textContent = `03:${String(mins % 60).padStart(2, '0')}`;
+  } else clkEl.textContent = '03:17';
+  requestAnimationFrame(loop);
+}
+
+/* =====================================================================
+   TITLE SCREEN + START
+   ===================================================================== */
+function setTools(on){ document.querySelectorAll('[data-cmd]').forEach(b => { b.disabled = !on; }); }
+function guessSkill(text){
+  const s = text.toLowerCase();
+  for (const id of SKILL_IDS) if (SKILL_WORDS[id].some(w => s.includes(w))) return id;
+  return null;
+}
+function showTitle(){
+  G = null; F = {}; clockStart = 0;
+  logEl.innerHTML = ''; choicesEl.innerHTML = ''; dockEl.hidden = true; setTools(false);
+  scope.setZone('bunker'); Sound.zone('surface');
+  dblEl.textContent = 'AMBIENT 38 dB';
+  const found = getEndings();
+  const card = document.createElement('section');
+  card.className = 'title';
+  card.innerHTML = `
+    <div class="t-kicker">HUSHWELL ACOUSTICS · FACILITY 9 · DAY 23 OF THE QUIET</div>
+    <h1 class="big">BUNKER 9<span>THE QUIET</span></h1>
+    <p class="t-lede">You wake up in an abandoned bunker. Every clock is stuck on the same minute. Up on the surface, the whole world has gone silent. And something deep underground is humming... in a voice that sounds a lot like yours.</p>
+    <ul class="t-rules"><li><b>No dice. No luck.</b> Only your choices.</li><li><b>People remember</b> what you do.</li><li><b>8 endings.</b> One is secret.</li></ul>
+    <form id="newgame" class="t-form" autocomplete="off" novalidate>
+      <label class="fl" for="nm">1 · Your name</label>
+      <input id="nm" maxlength="16" placeholder="Type your name">
+      <div class="fl">2 · One special skill</div>
+      <div class="skills" role="group" aria-label="Special skill">${SKILL_IDS.map(id => `<button type="button" class="skill" data-skill="${id}" aria-pressed="false"><span class="se">${SKILLS[id].e}</span><span><b>${esc(SKILLS[id].label)}</b><small>${esc(SKILLS[id].blurb)}</small></span></button>`).join('')}</div>
+      <label class="fl" for="cs">…or make up your own skill</label>
+      <input id="cs" maxlength="24" placeholder="e.g. super-loud whistling">
+      <div id="cmap" class="cmap" hidden></div>
+      <button class="start" id="startbtn" type="submit">WAKE UP ▸</button>
+      <p class="t-err" id="terr" role="status"></p>
+    </form>
+    <details class="t-load"><summary>Have a save code? Continue your game</summary>
+      <form id="loadform" class="t-loadrow" autocomplete="off"><input id="lc" placeholder="Paste your save code (starts with B9-)" aria-label="Save code"><button class="go" type="submit">LOAD</button></form>
+      <p class="t-err" id="lerr" role="status"></p>
+    </details>
+    <div class="t-ends"><div class="fl">Endings found · ${found.length}/8</div>${endGrid(found)}</div>`;
+  logEl.appendChild(card);
+  logEl.scrollTop = 0;
+
+  let picked = null;
+  const nm = card.querySelector('#nm'), cs = card.querySelector('#cs'), terr = card.querySelector('#terr'), cmap = card.querySelector('#cmap');
+  const skillBtns = card.querySelectorAll('.skill');
+  skillBtns.forEach(b => b.addEventListener('click', () => {
+    picked = b.dataset.skill; cs.value = ''; cmap.hidden = true;
+    skillBtns.forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    terr.textContent = '';
+  }));
+  cs.addEventListener('input', () => { if (cs.value.trim()){ picked = null; skillBtns.forEach(x => x.setAttribute('aria-pressed', 'false')); } cmap.hidden = true; });
+  card.querySelector('#newgame').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = nm.value.replace(/\|/g, '').trim();
+    const custom = cs.value.replace(/\|/g, '').trim();
+    if (!name){ terr.textContent = 'Type a name first!'; nm.focus(); return; }
+    if (custom){
+      const guess = guessSkill(custom);
+      if (guess) return start(name, guess, custom);
+      cmap.hidden = false;
+      cmap.innerHTML = `<p><b>"${esc(custom)}"</b> is a great skill! In Bunker 9, what kind of problems does it help you solve?</p>${SKILL_IDS.map(id => `<button type="button" class="cat" data-cat="${id}"><span class="se">${SKILLS[id].e}</span><span><b>${esc(SKILLS[id].cat)}</b><small>Works like ${esc(SKILLS[id].label.toLowerCase())}</small></span></button>`).join('')}`;
+      cmap.querySelectorAll('.cat').forEach(b => b.addEventListener('click', () => start(name, b.dataset.cat, custom)));
+      return;
+    }
+    if (!picked){ terr.textContent = 'Pick a special skill (or make one up)!'; return; }
+    start(name, picked, SKILLS[picked].label);
+  });
+  card.querySelector('#loadform').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = card.querySelector('#lc').value.trim();
+    if (!v || !tryLoad(v)) card.querySelector('#lerr').textContent = "That code didn't work. Make sure you copied all of it (it starts with B9-).";
+  });
+  if (finePointer) nm.focus({ preventScroll:true });
+}
+function start(name, skill, label){
+  G = freshState(name.slice(0, 16), skill, (label || SKILLS[skill].label).slice(0, 24));
+  F = G.F; clockStart = 0;
+  logEl.innerHTML = '';
+  dockEl.hidden = false; setTools(true); Sound.start();
+  beginTurn(null);
+  const custom = label && label !== SKILLS[skill].label;
+  add('intro', `<span class="intro-name">${N()}</span><span class="intro-skill">${SKILLS[skill].e} ${esc(G.skillLabel)}${custom ? ` <small>(works like ${esc(SKILLS[skill].label.toLowerCase())})</small>` : ''}</span>`);
+  note('Tip: click a choice, type its number, or type anything you want to try. Commands: inventory · map · hint · save · help');
+  G.vis.pod = 1;
+  goScene('pod_wake');
+  endTurn();
+}
+
+/* =====================================================================
+   WIRING
+   ===================================================================== */
+formEl.addEventListener('submit', e => {
+  e.preventDefault();
+  const v = inEl.value;
+  inEl.value = '';
+  Sound.start();
+  handleInput(v);
+});
+document.querySelectorAll('[data-cmd]').forEach(b => b.addEventListener('click', () => {
+  if (!G) return;
+  Sound.start();
+  ({ inventory:cmdInventory, map:cmdMap, hint:cmdHint, save:cmdSave })[b.dataset.cmd]();
+}));
+logEl.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || !G) return;
+  const act = b.dataset.act;
+  if (act === 'copy'){
+    const code = b.dataset.code;
+    const done = () => { b.textContent = 'COPIED ✓'; };
+    const fallbackSelect = () => { const ta = b.closest('.card').querySelector('textarea'); if (ta){ ta.focus(); ta.select(); } b.textContent = 'SELECTED: PRESS CTRL+C'; };
+    try { navigator.clipboard.writeText(code).then(done, fallbackSelect); } catch (err) { fallbackSelect(); }
+    return;
+  }
+  if (act.startsWith('use:') && !G.ended){
+    const id = act.slice(4);
+    if (!has(id)) return;
+    Sound.click();
+    beginTurn(`use ${itemName(id)}`);
+    useItem(id);
+    endTurn();
+  }
+});
+
+// Test/debug hook (harmless): lets automated checks drive the game.
+window.__b9 = { get G(){ return G; }, input: handleInput, choices: () => current.map(c => c.t), pick: i => choose(current[i]), start, load: tryLoad, code: () => makeCode() };
+
+function boot(data){
+  if (data && data.G && data.log){
+    G = data.G; F = G.F; logEl.innerHTML = data.log; dockEl.hidden = false; setTools(true);
+    curTurn = logEl.querySelector('.turn:last-of-type');
+    render();
+  } else showTitle();
+  requestAnimationFrame(loop);
+}
+if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => (G ? { G, log: logEl.innerHTML } : {}));
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot);
+else boot((window.claude && window.claude.hot && window.claude.hot.data) || {});
+})();
+</script>
+</body>
+</html>
