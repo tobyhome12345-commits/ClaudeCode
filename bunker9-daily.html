@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Bunker 9: Daily</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Gochi+Hand&family=IBM+Plex+Mono:wght@400;500;600&family=Saira+Stencil+One&display=swap">
+<style>
+/* Layout: a field log that grows one page a day. Stencil header + sound-meter strip, today's chapter and the one locked choice in the main column, the player's kit (inventory, trust, map, story so far) in a side column that stacks under it on phones. */
+:root{
+  --bg:#0e1216; --panel:#151b21; --panel-2:#1b232b; --line:#29343f; --line-2:#3c4a57;
+  --fg:#ebe6da; --muted:#929ca7; --faint:#5f6a75;
+  --amber:#f3a83b; --amber-ink:#1b1306; --amber-soft:rgba(243,168,59,.13);
+  --hum:#b4a7ff; --hum-soft:rgba(180,167,255,.12);
+  --danger:#ff6d5f; --ok:#7bd69a;
+  --c-mop:#5fd6c6; --c-vendr:#ff92c8; --c-bert:#f2df74; --c-varga:#ffa06f; --c-pip:#a8df74; --c-tape:#d6ceff;
+  --sticky-bg:#f0d470; --sticky-ink:#2b2306; --slate:#22302b; --slate-ink:#eef0e6; --shadow:rgba(0,0,0,.35);
+  --f-display:"Saira Stencil One","Arial Narrow",Impact,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --f-hand:"Gochi Hand","Comic Sans MS","Bradley Hand",cursive;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#e7eaed; --panel:#f6f7f8; --panel-2:#eceff2; --line:#c6cdd4; --line-2:#a7b1bb;
+    --fg:#17202a; --muted:#53606b; --faint:#86919b;
+    --amber:#a65600; --amber-ink:#fff7ea; --amber-soft:rgba(166,86,0,.10);
+    --hum:#5842d2; --hum-soft:rgba(88,66,210,.08);
+    --danger:#c73326; --ok:#1c7a3c;
+    --c-mop:#0a776a; --c-vendr:#b42e6e; --c-bert:#7f6100; --c-varga:#b3461a; --c-pip:#3b7413; --c-tape:#4a3eb2;
+    --sticky-bg:#f4dc7e; --sticky-ink:#2b2306; --slate:#2b3a33; --slate-ink:#eef0e6; --shadow:rgba(20,30,40,.14);
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#e7eaed; --panel:#f6f7f8; --panel-2:#eceff2; --line:#c6cdd4; --line-2:#a7b1bb;
+  --fg:#17202a; --muted:#53606b; --faint:#86919b;
+  --amber:#a65600; --amber-ink:#fff7ea; --amber-soft:rgba(166,86,0,.10);
+  --hum:#5842d2; --hum-soft:rgba(88,66,210,.08);
+  --danger:#c73326; --ok:#1c7a3c;
+  --c-mop:#0a776a; --c-vendr:#b42e6e; --c-bert:#7f6100; --c-varga:#b3461a; --c-pip:#3b7413; --c-tape:#4a3eb2;
+  --sticky-bg:#f4dc7e; --sticky-ink:#2b2306; --slate:#2b3a33; --slate-ink:#eef0e6; --shadow:rgba(20,30,40,.14);
+  color-scheme:light;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:14px 10px}
+.logo{font-family:var(--f-display);font-size:28px;line-height:1;letter-spacing:.03em;white-space:nowrap}
+.logo b{font-weight:400;color:var(--amber)}
+.sub{font:500 10.5px/1 var(--f-mono);letter-spacing:.16em;color:var(--muted);margin-top:6px}
+.daychip{font:600 12px/1 var(--f-mono);letter-spacing:.12em;color:var(--amber);border:1px solid var(--amber);border-radius:999px;padding:7px 11px;white-space:nowrap}
+.scope{position:relative;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden;margin-bottom:18px}
+.scope canvas{display:block;width:100%;height:100%}
+.scope .lbl{position:absolute;top:50%;transform:translateY(-50%);font:500 10.5px/1 var(--f-mono);letter-spacing:.12em;color:var(--muted);background:var(--panel);padding:4px 6px;border-radius:4px;font-variant-numeric:tabular-nums}
+#dbl{left:6px} #clk{right:6px;color:var(--amber)}
+
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:22px;align-items:start}
+.main,.side{display:grid;gap:16px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.fl{font:600 10.5px/1.3 var(--f-mono);letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.muted{color:var(--muted)} .small{font-size:.88em}
+
+/* chapter */
+.day{padding-block:4px}
+.kicker{font:600 11px/1.3 var(--f-mono);letter-spacing:.16em;color:var(--amber)}
+.title{font-family:var(--f-display);font-weight:400;font-size:clamp(30px,6vw,46px);line-height:1;letter-spacing:.02em;margin:.2em 0 .45em;text-wrap:balance}
+.scene p{margin:.5em 0;max-width:66ch}
+.say{display:flex;gap:10px;align-items:baseline;margin:.65em 0;max-width:72ch}
+.say .tag{flex:none;font:600 10.5px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;padding:4px 7px;border:1px solid currentColor;border-radius:4px;color:var(--who);position:relative;top:-2px;white-space:nowrap}
+.say .line{min-width:0}
+.c-mop{--who:var(--c-mop)} .c-vendr{--who:var(--c-vendr)} .c-bert{--who:var(--c-bert)} .c-varga{--who:var(--c-varga)} .c-pip{--who:var(--c-pip)} .c-hum{--who:var(--hum)} .c-tape{--who:var(--c-tape)} .c-other{--who:var(--muted)}
+.c-hum .tag{background:var(--hum-soft)} .c-hum .line{color:var(--hum)}
+.c-tape .line{color:var(--c-tape);font-style:italic}
+.c-pip .line{font-family:var(--f-hand);font-size:1.15em;text-transform:uppercase}
+.note{font:500 13px/1.4 var(--f-mono);color:var(--muted);margin:.35em 0}
+.scratch{font-family:var(--f-display);font-size:21px;letter-spacing:.07em;line-height:1.3;padding:12px 16px;border:1px dashed var(--line-2);border-radius:4px;background:var(--panel-2);transform:rotate(-1deg);width:fit-content;max-width:100%;margin:.8em 0}
+.sticky{font-family:var(--f-hand);font-size:20px;line-height:1.3;background:var(--sticky-bg);color:var(--sticky-ink);padding:10px 14px;width:fit-content;max-width:100%;transform:rotate(1.2deg);box-shadow:0 3px 0 var(--shadow);margin:.8em 0}
+.chalk{font-family:var(--f-hand);font-size:19px;line-height:1.5;background:var(--slate);color:var(--slate-ink);padding:12px 16px;border-radius:6px;margin:.7em 0;max-width:62ch;text-transform:uppercase}
+.riddle{font-style:italic;font-size:1.06em;line-height:1.6;padding:12px 16px;border:1px dashed var(--amber);border-radius:6px;background:var(--amber-soft);margin:.7em 0;width:fit-content;max-width:100%}
+.quote{font-style:italic;padding:6px 0 6px 18px;border-left:3px solid var(--line-2);margin:.7em 0;max-width:60ch}
+.honk{font-family:var(--f-display);font-size:52px;line-height:1;color:var(--c-bert);margin:.15em 0}
+
+/* status */
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-top:16px;padding:9px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;font:500 12.5px/1.4 var(--f-mono);color:var(--muted)}
+.st-loc{font-family:var(--f-display);font-size:15px;color:var(--fg);letter-spacing:.05em}
+.st-hp{color:var(--danger);letter-spacing:2px;font-size:14px}
+.st-hp .off{color:var(--line-2)}
+.st-items{color:var(--fg);overflow-wrap:anywhere}
+.tm{display:inline-flex;align-items:center;gap:5px;color:var(--who)}
+.tm .bars{display:inline-flex;gap:2px}
+.tm i{width:6px;height:10px;border-radius:1px;background:var(--line-2)}
+.tm i.on{background:var(--who)}
+
+/* the choice */
+.choose{border-color:var(--amber)}
+.choose h2{font-family:var(--f-display);font-weight:400;font-size:22px;letter-spacing:.05em;margin:.15em 0 .6em}
+.opts{display:grid;gap:8px}
+.opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;cursor:pointer;color:var(--fg);font:400 16px/1.35 var(--f-body)}
+.opt:hover{border-color:var(--amber)}
+.opt[aria-checked="true"]{border-color:var(--amber);background:var(--amber-soft)}
+.opt .k{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--amber);color:var(--amber);font:600 13px/1 var(--f-mono)}
+.opt[aria-checked="true"] .k{background:var(--amber);color:var(--amber-ink)}
+.opt .t{min-width:0}
+.opt .sk{margin-left:auto;flex:none;font:600 9.5px/1 var(--f-mono);letter-spacing:.12em;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:3px 5px}
+.opt:disabled{cursor:default;opacity:.75}
+.customlbl{display:block;margin:14px 0 6px}
+textarea,.field{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:400 16px/1.4 var(--f-body);color:var(--fg);resize:vertical}
+textarea:focus,.field:focus{border-color:var(--amber);outline:0}
+.lockrow{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:14px}
+.btn{font-family:var(--f-display);font-size:19px;letter-spacing:.06em;background:var(--amber);color:var(--amber-ink);border:0;border-radius:9px;padding:11px 20px;cursor:pointer;box-shadow:inset 0 -3px 0 var(--shadow)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line-2);box-shadow:none;font:600 13px/1 var(--f-mono);letter-spacing:.06em;padding:12px 14px}
+.confirm{margin-top:14px;padding:14px;border:1px dashed var(--amber);border-radius:10px;background:var(--amber-soft)}
+.confirm p{margin:0 0 10px}
+.err{font:500 13px/1.4 var(--f-mono);color:var(--danger);margin:10px 0 0}
+.hint{margin-top:14px}
+.hint summary{cursor:pointer;font:500 13px/1.4 var(--f-mono);color:var(--muted)}
+.hint p{margin:.5em 0 0}
+.locked .picked{font-size:1.12em;font-weight:700;margin:.3em 0 .5em}
+.count{font:500 13px/1.4 var(--f-mono);color:var(--amber);font-variant-numeric:tabular-nums}
+
+/* side */
+.side h3{font-family:var(--f-display);font-weight:400;font-size:18px;letter-spacing:.05em;margin:0 0 10px}
+.inv{display:grid;gap:9px}
+.inv-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;align-items:start;font-size:15px}
+.inv-row .ie{font-size:18px;line-height:1.2}
+.inv-row small{display:block;color:var(--muted);font-size:.85em;line-height:1.35}
+.meta-row{display:flex;flex-wrap:wrap;gap:4px 14px;font:500 12.5px/1.4 var(--f-mono);color:var(--muted);margin-top:10px}
+.meta-row b{color:var(--fg)}
+.trust{display:grid;gap:8px}
+.trust .tm{justify-content:space-between;font:500 13px/1.2 var(--f-mono)}
+.trust .tm i{width:9px;height:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 12px/1.2 var(--f-mono);padding:6px 8px;border-radius:6px;border:1px solid var(--line-2);color:var(--muted)}
+.chip.here{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
+.past{display:grid;gap:6px}
+.past details{border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
+.past summary{cursor:pointer;padding:9px 11px;font:500 13px/1.35 var(--f-mono)}
+.past .body{padding:0 12px 10px;font-size:15px}
+.past .chose{font:500 12.5px/1.4 var(--f-mono);color:var(--amber);margin-top:8px}
+.how p{margin:.35em 0;font-size:15px}
+
+/* ending */
+.ending{border-color:var(--amber)}
+.ending .emoji{font-size:44px;line-height:1;margin-top:8px}
+.eg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.eg div{border:1px dashed var(--line-2);border-radius:7px;padding:8px;font:500 11px/1.3 var(--f-mono);color:var(--faint);min-height:50px;display:flex;flex-direction:column;gap:3px}
+.eg div.got{border-style:solid;border-color:var(--amber);color:var(--fg);background:var(--amber-soft)}
+
+/* setup + messages */
+.hero{padding-block:8px 4px}
+.big{font-family:var(--f-display);font-weight:400;font-size:clamp(50px,12vw,88px);line-height:.88;margin:.1em 0 .2em}
+.big span{display:block;font-size:.36em;color:var(--amber);letter-spacing:.14em;margin-top:.2em}
+.lede{font-size:1.08em;max-width:60ch}
+.rules{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-wrap:wrap;gap:6px 18px;font:500 13px/1.4 var(--f-mono);color:var(--muted)}
+.rules b{color:var(--fg)}
+.form{display:grid;gap:10px;max-width:760px}
+.skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.skill{display:flex;gap:10px;align-items:center;text-align:left;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;color:var(--fg)}
+.skill:hover{border-color:var(--amber)}
+.skill[aria-pressed="true"]{border-color:var(--amber);background:var(--amber-soft)}
+.skill .se{font-size:22px}
+.skill b{display:block;font-size:15px}
+.skill small{display:block;color:var(--muted);font-size:12.5px;line-height:1.3}
+.msg{max-width:640px}
+.msg h2{font-family:var(--f-display);font-weight:400;font-size:26px;margin:.1em 0 .3em}
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);margin-right:8px;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+@media (max-width:860px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:560px){
+  body{font-size:16px}
+  .logo{font-size:23px}
+  .say{flex-direction:column;gap:4px}
+  .opt{font-size:15px;padding:9px 10px}
+  .eg{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="logo">BUNKER <b>9</b></div>
+      <div class="sub">DAILY · ONE CHOICE A DAY</div>
+    </div>
+    <div class="daychip" id="daychip" hidden></div>
+  </header>
+  <div class="scope" aria-hidden="true">
+    <canvas id="scope"></canvas>
+    <span class="lbl" id="dbl">AMBIENT 38 dB</span>
+    <span class="lbl" id="clk">03:17</span>
+  </div>
+  <main id="app" aria-live="polite">
+    <section class="panel msg"><p><span class="pulse"></span>Opening Bunker 9…</p></section>
+  </main>
+</div>
+
+<script>
+(async () => {
+'use strict';
+
+/* ---------- settings ---------- */
+// When the nightly Game Master run happens (must match the scheduled task).
+const RUN = { tz:'Australia/Sydney', h:0, m:41, label:'around 1am (Sydney time)' };
+const ARTIFACT_URL = 'https://claude.ai/artifact/8kcPV6ZZVdWQXWnHJGe5ot';
+const SKILLS = {
+  tech:    { label:'Fixing machines',    e:'🔧', blurb:'Robots, gadgets, wires' },
+  animal:  { label:'Talking to animals', e:'🐾', blurb:'Geese. Mostly geese.' },
+  lock:    { label:'Lockpicking',        e:'🔓', blurb:'Doors, boxes, padlocks' },
+  memory:  { label:'Perfect memory',     e:'🧠', blurb:'Never forget a clue' },
+  talk:    { label:'Bluffing & charm',   e:'🎭', blurb:'Talk your way into anything' },
+  parkour: { label:'Parkour',            e:'🤸', blurb:'Climb anything, fit anywhere' },
+};
+const SKILL_WORDS = {
+  tech:['fix','machine','mechanic','engineer','tech','hack','robot','computer','build','repair','invent','electric','wire','coding','program','gadget','tinker','science'],
+  animal:['animal','goose','dog','cat','bird','pet','creature','zoo','vet','nature','beast','horse','fish','whisper'],
+  lock:['lock','pick','thief','steal','sneak','stealth','safe','crack','burgl','spy','hide','invisible'],
+  memory:['memory','remember','smart','genius','brain','clever','detective','observ','notice','photographic','puzzle','math','study','think','riddle','read'],
+  talk:['bluff','persua','talk','charm','lie','convinc','funny','joke','act','speech','negotiat','sell','friend','social','sing','music','rizz','cute','nice'],
+  parkour:['parkour','climb','jump','run','fast','athlet','acrobat','flip','gymnast','sport','strong','agile','speed','ninja','dodge','swim','skate','football','soccer','fight','karate'],
+};
+const WHO = { mop:'MOP', vendr:'VEND-R', bert:'Bertrand', varga:'Dr. Varga', hum:'??? · your voice', pip:'Pip', tape:'Tape · your voice' };
+const TRUST_NAMES = { mop:'MOP', vendr:'VEND-R', bert:'Bertrand', varga:'Dr. Varga', hum:'The Hum', pip:'Pip' };
+const ENDINGS = [
+  ['chorus','🌟','The Chorus'], ['half','🎶','Half a Song'], ['smash','💥','The Big Smash'], ['ruler','👑','The Silent Ruler'],
+  ['jar','🫙','One of the Jars'], ['loud','📢','The Loudest Second'], ['walk','🚶','The Long Walk'], ['nap','😴','The Long Nap'],
+];
+
+/* ---------- state ---------- */
+const S = {
+  db:null, canWrite:false, meta:undefined, days:null, picks:null, timedOut:false, fatal:'',
+  sel:null, custom:'', confirming:false, busy:false, err:'', setupSkill:null, setupErr:'', setupName:'', setupCustom:'',
+};
+const app = document.getElementById('app');
+const dayChip = document.getElementById('daychip');
+
+/* ---------- helpers ---------- */
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(s){
+  const name = (S.meta && S.meta.name) || 'You';
+  return esc(String(s == null ? '' : s).split('{name}').join(name))
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>').replace(/\n/g, '<br>');
+}
+function dayId(n){ return 'd' + String(n).padStart(3, '0'); }
+function dateLabel(iso){
+  if (!iso) return '';
+  const d = new Date(String(iso).length === 10 ? iso + 'T12:00:00' : iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString(undefined, { weekday:'short', day:'numeric', month:'short' }).toUpperCase();
+}
+function minutesUntilRun(){
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone:RUN.tz, hour:'2-digit', minute:'2-digit', hourCycle:'h23' }).formatToParts(new Date());
+    const h = +parts.find(p => p.type === 'hour').value, m = +parts.find(p => p.type === 'minute').value;
+    let diff = (RUN.h * 60 + RUN.m) - (h * 60 + m);
+    if (diff <= 0) diff += 1440;
+    return diff;
+  } catch (e) { return null; }
+}
+function countdownText(){
+  const mins = minutesUntilRun();
+  if (mins == null) return RUN.label;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+function guessSkill(text){
+  const s = text.toLowerCase();
+  for (const id of Object.keys(SKILL_WORDS)) if (SKILL_WORDS[id].some(w => s.includes(w))) return id;
+  return null;
+}
+function todayDoc(){ return S.days && S.meta ? S.days.find(d => d.day === S.meta.day) : null; }
+function visibleChoices(day){
+  const skill = S.meta && S.meta.skill;
+  return (Array.isArray(day.choices) ? day.choices : []).filter(c => c && c.id && c.text && (!c.skill || c.skill === skill));
+}
+
+/* ---------- rendering pieces ---------- */
+function sceneHTML(scene){
+  return (Array.isArray(scene) ? scene : []).map(b => {
+    if (!b) return '';
+    const t = fmt(b.text);
+    switch (b.k){
+      case 'say': {
+        const who = WHO[b.who] ? b.who : 'other';
+        const label = b.name || WHO[b.who] || b.who || '???';
+        return `<div class="say c-${who}"><span class="tag">${esc(label)}</span><span class="line">${t}</span></div>`;
+      }
+      case 'note': return `<div class="note">${t}</div>`;
+      case 'sticky': case 'chalk': case 'scratch': case 'riddle': case 'quote': case 'honk':
+        return `<div class="${b.k}">${t}</div>`;
+      default: return `<p>${t}</p>`;
+    }
+  }).join('');
+}
+function meters(trust, cls){
+  return Object.keys(trust || {}).filter(w => typeof trust[w] === 'number').map(w => {
+    const v = Math.max(0, Math.min(5, trust[w]));
+    const cw = TRUST_NAMES[w] ? w : 'other';
+    return `<span class="tm c-${cw === 'bert' ? 'bert' : cw}" title="${esc(TRUST_NAMES[w] || w)}: trust ${v} of 5">${esc(cls === 'long' ? (TRUST_NAMES[w] || w) : (TRUST_NAMES[w] || w).toUpperCase().replace('DR. ', ''))}<span class="bars">${[0,1,2,3,4].map(i => `<i class="${i < v ? 'on' : ''}"></i>`).join('')}</span></span>`;
+  }).join('');
+}
+function statusHTML(st){
+  if (!st) return '';
+  const hp = Math.max(0, Math.min(5, +st.hp || 0));
+  const items = (st.items || []).map(it => `<span title="${esc(it.n)}">${esc(it.e || '•')}</span>`).join(' ');
+  const tr = meters(st.trust);
+  return `<div class="status" role="group" aria-label="Status">
+    <span class="st-loc">📍 ${esc(String(st.loc || '').toUpperCase())}</span>
+    <span class="st-hp" aria-label="Health ${hp} of 5">${'♥'.repeat(hp)}<span class="off">${'♥'.repeat(5 - hp)}</span></span>
+    <span class="st-items">🎒 ${items || '<span class="muted">empty</span>'}</span>
+    <span>🪙 ${+st.tokens || 0}</span>
+    ${st.companion ? `<span>🪿 + ${esc(st.companion)}</span>` : ''}
+    ${tr ? `<span style="display:inline-flex;flex-wrap:wrap;gap:4px 12px">🤝 ${tr}</span>` : ''}
+  </div>`;
+}
+function endGrid(found){
+  return `<div class="eg">${ENDINGS.map(([id, e, t]) => found.includes(id)
+    ? `<div class="got"><span>${e}</span>${esc(t)}</div>`
+    : `<div><span>${id === 'chorus' ? '★' : '?'}</span>${id === 'chorus' ? 'SECRET' : '???'}</div>`).join('')}</div>`;
+}
+function choiceHTML(day){
+  const N = S.meta.day;
+  const pick = S.picks && S.picks[dayId(N)];
+  if (pick){
+    return `<section class="panel choose locked">
+      <div class="fl">Today's choice · locked 🔒</div>
+      <p class="picked">${pick.custom ? '✍️ ' : '➜ '}${esc(pick.text)}</p>
+      <p class="muted">That's your one move for today. Claude reads it overnight and writes what happens next. Day ${N + 1} unlocks ${esc(RUN.label)}.</p>
+      <div class="count">⏳ Next chapter in about <span id="countdown">${esc(countdownText())}</span></div>
+    </section>`;
+  }
+  const opts = visibleChoices(day);
+  const allowCustom = day.allowCustom !== false;
+  if (!S.canWrite){
+    return `<section class="panel choose"><div class="fl">Today's choice</div><h2>What will ${esc(S.meta.name || 'they')} do?</h2>
+      <div class="opts">${opts.map((c, i) => `<button type="button" class="opt" disabled><span class="k">${'ABCDEF'[i]}</span><span class="t">${fmt(c.text)}</span></button>`).join('')}</div>
+      <p class="muted small">Only the player can choose. Check back tomorrow to see what happened.</p></section>`;
+  }
+  const chosenText = S.custom.trim() ? S.custom.trim() : (opts.find(c => c.id === S.sel) || {}).text;
+  return `<section class="panel choose">
+    <div class="fl">Today's choice · you get one</div>
+    <h2>What do you do?</h2>
+    <div class="opts" role="radiogroup" aria-label="Today's choice">
+      ${opts.map((c, i) => `<button type="button" class="opt" role="radio" aria-checked="${S.sel === c.id}" data-act="sel" data-id="${esc(c.id)}"><span class="k">${'ABCDEF'[i]}</span><span class="t">${fmt(c.text)}</span>${c.skill ? '<span class="sk">SKILL</span>' : ''}</button>`).join('')}
+    </div>
+    ${allowCustom ? `<label class="fl customlbl" for="custom">…or do something else (type it)</label>
+      <textarea id="custom" rows="2" maxlength="160" placeholder="Anything you want to try. Claude will write what happens.">${esc(S.custom)}</textarea>` : ''}
+    <div class="lockrow">
+      <button type="button" class="btn" data-act="lock" id="lockbtn" ${chosenText && !S.confirming ? '' : 'disabled'}>LOCK IT IN 🔒</button>
+      <span class="muted small">One choice per day. No take-backs! No rush either: the story waits until you choose.</span>
+    </div>
+    ${S.confirming && chosenText ? `<div class="confirm" role="alertdialog" aria-label="Confirm your choice">
+      <p>Lock in <b>“${esc(chosenText)}”</b>? You can't change it until tomorrow's chapter.</p>
+      <div class="lockrow" style="margin-top:0"><button type="button" class="btn" data-act="confirm" ${S.busy ? 'disabled' : ''}>${S.busy ? 'SAVING…' : 'YES, LOCK IT IN'}</button><button type="button" class="btn ghost" data-act="cancel">WAIT, GO BACK</button></div>
+    </div>` : ''}
+    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${day.hint ? `<details class="hint"><summary>💡 Need a hint?</summary><p>${fmt(day.hint)}</p></details>` : ''}
+  </section>`;
+}
+function endingHTML(day){
+  const e = day.ending || {};
+  const found = Array.isArray(S.meta.endingsFound) ? S.meta.endingsFound : (e.id ? [e.id] : []);
+  return `<section class="panel ending">
+    <div class="kicker">THE END${e.tag ? ' · ' + esc(String(e.tag).toUpperCase()) : ''}</div>
+    <div class="emoji">${esc(e.emoji || '🌟')}</div>
+    <h2 class="title" style="font-size:clamp(28px,6vw,40px)">${fmt(e.title || 'The End')}</h2>
+    ${(e.epilogue || []).map(s => `<p>${fmt(s)}</p>`).join('')}
+    <div class="fl" style="margin-top:14px">Endings found · ${found.length}/8</div>
+    ${endGrid(found)}
+    <div class="lockrow">
+      ${S.meta.restart ? `<p class="count">✓ A brand-new story starts ${esc(RUN.label)}.</p>`
+        : S.canWrite ? `<button type="button" class="btn" data-act="restart">START A NEW STORY ▸</button><span class="muted small">It begins tonight, ${esc(RUN.label)}.</span>` : ''}
+    </div>
+    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}
+  </section>`;
+}
+function sideHTML(day){
+  const st = day.status || {};
+  const items = (st.items || []).map(it => `<div class="inv-row"><span class="ie">${esc(it.e || '•')}</span><div><b>${esc(it.n)}</b>${it.d ? `<small>${fmt(it.d)}</small>` : ''}</div></div>`).join('');
+  const tr = meters(st.trust, 'long');
+  const visited = Array.isArray(st.visited) ? st.visited : [];
+  const past = (S.days || []).filter(d => d.day < S.meta.day).sort((a, b) => b.day - a.day);
+  return `
+    <section class="panel"><h3>🎒 Inventory</h3>
+      ${items ? `<div class="inv">${items}</div>` : '<p class="muted small">Empty pockets.</p>'}
+      <div class="meta-row"><span>${esc((SKILLS[S.meta.skill] || {}).e || '★')} Skill: <b>${esc(S.meta.skillLabel || '')}</b></span><span>🪙 Tokens: <b>${+st.tokens || 0}</b></span>${st.companion ? `<span>🪿 With you: <b>${esc(st.companion)}</b></span>` : ''}</div>
+    </section>
+    <section class="panel"><h3>🤝 Trust</h3>${tr ? `<div class="trust">${tr}</div>` : '<p class="muted small">You haven\'t met anyone yet. Probably.</p>'}</section>
+    <section class="panel"><h3>🗺️ Places you've been</h3><div class="chips">${visited.map(v => `<span class="chip${v === st.loc ? ' here' : ''}">${v === st.loc ? '📍 ' : ''}${esc(v)}</span>`).join('') || '<span class="muted small">Nowhere yet.</span>'}</div></section>
+    ${past.length ? `<section class="panel"><h3>📜 Story so far</h3><div class="past">${past.map(d => {
+      const pk = S.picks && S.picks[dayId(d.day)];
+      return `<details><summary>Day ${d.day} · ${fmt(d.title)}</summary><div class="body">${sceneHTML(d.scene)}${pk ? `<div class="chose">You chose: ${esc(pk.text)}</div>` : ''}</div></details>`;
+    }).join('')}</div></section>` : ''}
+    <section class="panel how"><h3>❔ How it works</h3>
+      <p><b>One choice a day.</b> Pick an option or type your own, then lock it in.</p>
+      <p>Overnight, Claude reads what you chose and writes the next chapter. It's ready ${esc(RUN.label)}.</p>
+      <p>Skip a day? No problem. Nothing happens until you choose. The story waits for you.</p>
+      <p>No dice, no luck. Everyone remembers what you did.</p>
+    </section>`;
+}
+function setupHTML(){
+  const ready = S.days && S.days.some(d => d.day === 1);
+  return `<section class="hero">
+      <div class="kicker">HUSHWELL ACOUSTICS · FACILITY 9 · A NEW CHAPTER EVERY DAY</div>
+      <h1 class="big">BUNKER 9<span>DAILY</span></h1>
+      <p class="lede">You wake up in an abandoned bunker. Every clock is stuck on the same minute. The whole world above has gone silent. And something deep underground is humming… in a voice that sounds a lot like yours.</p>
+      <ul class="rules"><li><b>One choice a day.</b> Locked in until tomorrow.</li><li><b>Claude writes</b> what happens next.</li><li><b>8 endings.</b> One is secret.</li></ul>
+    </section>
+    ${!S.canWrite ? `<section class="panel msg"><p>This story hasn't started yet. Only the player can start it.</p></section>`
+      : !ready ? `<section class="panel msg"><p><span class="pulse"></span>Day 1 is still being written. This page updates by itself.</p></section>`
+      : `<form class="panel form" id="setup" autocomplete="off" novalidate>
+      <label class="fl" for="nm">1 · Your name</label>
+      <input class="field" id="nm" maxlength="16" placeholder="Type your name" value="${esc(S.setupName)}">
+      <div class="fl">2 · One special skill</div>
+      <div class="skills" role="group" aria-label="Special skill">${Object.keys(SKILLS).map(id => `<button type="button" class="skill" data-act="skill" data-skill="${id}" aria-pressed="${S.setupSkill === id}"><span class="se">${SKILLS[id].e}</span><span><b>${esc(SKILLS[id].label)}</b><small>${esc(SKILLS[id].blurb)}</small></span></button>`).join('')}</div>
+      <label class="fl" for="cs">…or make up your own skill</label>
+      <input class="field" id="cs" maxlength="24" placeholder="e.g. super-loud whistling" value="${esc(S.setupCustom)}">
+      <div class="lockrow"><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>WAKE UP ▸</button><span class="muted small">Your name and skill are kept for the whole story.</span></div>
+      ${S.setupErr ? `<p class="err">${esc(S.setupErr)}</p>` : ''}
+    </form>`}`;
+}
+function msgHTML(title, body, pulse){
+  return `<section class="panel msg">${title ? `<h2>${esc(title)}</h2>` : ''}<p>${pulse ? '<span class="pulse"></span>' : ''}${body}</p></section>`;
+}
+
+/* ---------- main render ---------- */
+function render(){
+  if (S.fatal === 'noruntime'){
+    app.innerHTML = msgHTML('Bunker 9: Daily lives on claude.ai', `This daily game saves your choices to your Claude account, so it only works when opened on claude.ai. ${ARTIFACT_URL.includes('PENDING') ? 'Open it from your artifacts on claude.ai.' : `Open it here: <a href="${esc(ARTIFACT_URL)}">${esc(ARTIFACT_URL)}</a>`}`);
+    return;
+  }
+  if (S.fatal === 'nodb'){
+    app.innerHTML = msgHTML('Sign in to play', 'Your daily story is saved to your Claude account. Open this page on claude.ai while signed in.');
+    return;
+  }
+  if (S.fatal){ app.innerHTML = msgHTML('Connection lost', esc(S.fatal)); return; }
+  if (S.meta === undefined || S.days === null || S.picks === null){
+    app.innerHTML = msgHTML('', S.timedOut ? "Can't reach the game save yet. Check your internet. This page will update by itself when it connects." : 'Opening Bunker 9…', !S.timedOut);
+    return;
+  }
+  if (!S.meta){ dayChip.hidden = true; app.innerHTML = setupHTML(); return; }
+  const day = todayDoc();
+  dayChip.hidden = false;
+  dayChip.textContent = `DAY ${S.meta.day}`;
+  if (!day){ app.innerHTML = msgHTML(`Day ${S.meta.day}`, 'This chapter is still being written. This page updates by itself.', true); return; }
+  setScope(day);
+  app.innerHTML = `<div class="grid">
+    <div class="main">
+      <article class="day">
+        <div class="kicker">DAY ${day.day}${dateLabel(day.date || (day.day === 1 && S.meta.startedAt)) ? ' · ' + dateLabel(day.date || S.meta.startedAt) : ''}</div>
+        <h1 class="title">${fmt(day.title || 'Day ' + day.day)}</h1>
+        <div class="scene">${sceneHTML(day.scene)}</div>
+        ${statusHTML(day.status)}
+      </article>
+      ${day.ending ? endingHTML(day) : choiceHTML(day)}
+    </div>
+    <aside class="side">${sideHTML(day)}</aside>
+  </div>`;
+}
+
+/* ---------- actions ---------- */
+function syncChoiceUI(){
+  const day = todayDoc(); if (!day) return;
+  const opts = visibleChoices(day);
+  app.querySelectorAll('.opt[data-act="sel"]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.id === S.sel)));
+  const chosen = S.custom.trim() || (opts.find(c => c.id === S.sel) || {}).text;
+  const lb = document.getElementById('lockbtn');
+  if (lb) lb.disabled = !chosen || S.confirming;
+}
+async function lockIn(){
+  const day = todayDoc();
+  if (!day || S.busy) return;
+  const N = S.meta.day;
+  const custom = S.custom.trim().slice(0, 160);
+  const opt = visibleChoices(day).find(c => c.id === S.sel);
+  if (!custom && !opt) return;
+  S.busy = true; S.err = ''; render();
+  try {
+    const ref = S.db.doc('picks/' + dayId(N));
+    const existing = await ref.get();
+    if (!existing.exists){
+      await ref.set({ day:N, optionId: custom ? null : opt.id, text: custom || opt.text.split('{name}').join(S.meta.name || ''), custom: !!custom, at: new Date().toISOString() });
+    }
+    S.sel = null; S.custom = ''; S.confirming = false;
+  } catch (e) {
+    if (e && e.code === 'invalid_argument'){ S.canWrite = false; S.confirming = false; }
+    else S.err = "Couldn't save your choice. Check your internet and try again.";
+  }
+  S.busy = false; render();
+}
+async function startGame(form){
+  const name = form.querySelector('#nm').value.replace(/\s+/g, ' ').trim();
+  const custom = form.querySelector('#cs').value.replace(/\s+/g, ' ').trim();
+  if (!name){ S.setupErr = 'Type a name first!'; render(); return; }
+  let skill = S.setupSkill, label = skill ? SKILLS[skill].label : '';
+  if (custom){ skill = guessSkill(custom) || S.setupSkill || 'memory'; label = custom; }
+  if (!skill){ S.setupErr = 'Pick a special skill (or make one up)!'; render(); return; }
+  S.busy = true; S.setupErr = ''; render();
+  try {
+    const ref = S.db.doc('game/meta');
+    const existing = await ref.get();
+    if (!existing.exists){
+      await ref.set({ name:name.slice(0, 16), skill, skillLabel:label.slice(0, 24), day:1, startedAt:new Date().toISOString(), ended:null, restart:false, run:1, endingsFound:[], tz:RUN.tz });
+    }
+  } catch (e) {
+    if (e && e.code === 'invalid_argument') S.canWrite = false;
+    S.setupErr = "Couldn't start the story. Try again in a moment.";
+  }
+  S.busy = false; render();
+}
+async function requestRestart(){
+  if (S.busy) return;
+  S.busy = true; S.err = ''; render();
+  try { await S.db.doc('game/meta').update({ restart:true }); }
+  catch (e) { S.err = "Couldn't save that. Try again in a moment."; }
+  S.busy = false; render();
+}
+
+app.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'sel'){ S.sel = b.dataset.id; S.custom = ''; const ta = document.getElementById('custom'); if (ta) ta.value = ''; S.confirming = false; render(); }
+  else if (act === 'lock'){ S.confirming = true; render(); const c = app.querySelector('.confirm .btn'); if (c) c.focus(); }
+  else if (act === 'cancel'){ S.confirming = false; render(); }
+  else if (act === 'confirm') lockIn();
+  else if (act === 'skill'){
+    S.setupSkill = b.dataset.skill;
+    app.querySelectorAll('.skill').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    const cs = document.getElementById('cs'); if (cs) cs.value = '';
+    S.setupCustom = '';
+  }
+  else if (act === 'restart') requestRestart();
+});
+app.addEventListener('input', e => {
+  if (e.target.id === 'custom'){
+    S.custom = e.target.value;
+    if (S.custom.trim() && S.sel){ S.sel = null; }
+    if (S.confirming){ S.confirming = false; render(); const ta = document.getElementById('custom'); if (ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } return; }
+    syncChoiceUI();
+  } else if (e.target.id === 'nm'){
+    S.setupName = e.target.value;
+  } else if (e.target.id === 'cs'){
+    S.setupCustom = e.target.value;
+    if (!e.target.value.trim()) return;
+    S.setupSkill = null;
+    app.querySelectorAll('.skill').forEach(x => x.setAttribute('aria-pressed', 'false'));
+  }
+});
+app.addEventListener('submit', e => { if (e.target.id === 'setup'){ e.preventDefault(); startGame(e.target); } });
+setInterval(() => { const c = document.getElementById('countdown'); if (c) c.textContent = countdownText(); }, 30000);
+
+/* ---------- sound meter (decorative) ---------- */
+const cv = document.getElementById('scope');
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let amp = 6, target = 6, tt = 0, mode = 'bunker', colors = null, frame = 0;
+function setScope(day){
+  const st = day.status || {};
+  mode = day.ending && day.ending.id === 'chorus' ? 'chorus' : (st.zone || 'bunker');
+  target = { surface:0, booth:3, deep:12, chorus:13 }[mode] ?? 6;
+  const db = mode === 'surface' ? 0 : mode === 'deep' ? 74 : mode === 'booth' ? 30 : 40;
+  document.getElementById('dbl').textContent = mode === 'chorus' ? 'AMBIENT 64 dB · SOUND RESTORED' : db === 0 ? 'AMBIENT 0 dB · SILENT' : `AMBIENT ${db} dB`;
+  document.getElementById('clk').textContent = mode === 'chorus' ? '03:18' : '03:17';
+  if (reduce){ amp = target; draw(); }
+}
+function draw(){
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== Math.round(w * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  if (!colors || frame % 90 === 0){ const cs = getComputedStyle(document.documentElement); colors = { line:cs.getPropertyValue('--line').trim(), hum:cs.getPropertyValue('--hum').trim(), amber:cs.getPropertyValue('--amber').trim(), faint:cs.getPropertyValue('--faint').trim() }; }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+  c.strokeStyle = colors.line; c.lineWidth = 1; c.beginPath();
+  for (let x = 0; x < w; x += 22){ c.moveTo(x + .5, 0); c.lineTo(x + .5, h); }
+  c.moveTo(0, h / 2 + .5); c.lineTo(w, h / 2 + .5); c.stroke();
+  amp += (target - amp) * 0.04;
+  const a = Math.min(amp, h / 2 - 3);
+  c.strokeStyle = mode === 'surface' && amp < .4 ? colors.faint : mode === 'chorus' ? colors.amber : colors.hum;
+  c.lineWidth = 1.6; c.beginPath();
+  for (let x = 0; x <= w; x += 2){
+    const k = x / w;
+    let y = Math.sin(k * 19 + tt * 2) * .55 + Math.sin(k * 43 - tt * 3.1) * .25 + Math.sin(k * 7 + tt * .7) * .3;
+    if (amp > 9) y *= 1 + .35 * Math.sin(k * 95 + tt * 7);
+    const yy = h / 2 + a * y;
+    if (x === 0) c.moveTo(x, yy); else c.lineTo(x, yy);
+  }
+  c.stroke(); tt += .016; frame++;
+}
+function loop(){ if (!document.hidden) draw(); requestAnimationFrame(loop); }
+if (reduce) draw(); else requestAnimationFrame(loop);
+
+/* ---------- connect to the saved game ---------- */
+if (!window.claude || typeof window.claude.use !== 'function'){ S.fatal = 'noruntime'; render(); return; }
+const timer = setTimeout(() => { S.timedOut = true; render(); }, 10000);
+const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+if (!db){ clearTimeout(timer); S.fatal = 'nodb'; render(); return; }
+S.db = db;
+if (user){
+  const [own, can] = await Promise.all([user.isOwner(), user.can('data.write')]);
+  S.canWrite = own || can !== false;
+} else S.canWrite = true; // not told: a refused write will decide
+const got = { meta:false, days:false, picks:false };
+function arrived(k, fromCache){ if (!fromCache){ got[k] = true; if (got.meta && got.days && got.picks){ clearTimeout(timer); S.timedOut = false; } } }
+function onErr(e){ clearTimeout(timer); if (e && e.code === 'revoked') S.fatal = 'This page lost access to the game save. Reopen it on claude.ai.'; else S.fatal = "Lost the connection to the game save. Reopen this page to reconnect."; render(); }
+db.doc('game/meta').onSnapshot(snap => { S.meta = snap.exists ? Object.assign({}, snap.data()) : null; arrived('meta', snap.metadata.fromCache); render(); }, onErr);
+db.collection('days').onSnapshot(q => { S.days = q.docs.map(d => Object.assign({ id:d.id }, d.data())).filter(d => typeof d.day === 'number').sort((a, b) => a.day - b.day); arrived('days', q.metadata.fromCache); render(); }, onErr);
+db.collection('picks').onSnapshot(q => { const m = {}; q.docs.forEach(d => { m[d.id] = d.data(); }); S.picks = m; arrived('picks', q.metadata.fromCache); render(); }, onErr);
+})();
+</script>
+</body>
+</html>
