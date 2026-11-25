@@ -149,6 +149,26 @@ textarea:focus,.field:focus{border-color:var(--amber);outline:0}
 .past .chose{font:500 12.5px/1.4 var(--f-mono);color:var(--amber);margin-top:8px}
 .how p{margin:.35em 0;font-size:15px}
 
+/* story progress + goal + extra panels */
+.journey{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.jrow{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.jt{font-family:var(--f-display);font-size:18px;letter-spacing:.04em}
+.jp{margin-left:auto;font:600 12px/1 var(--f-mono);color:var(--amber);font-variant-numeric:tabular-nums}
+.bar{position:relative;height:10px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;left:0;background:var(--amber);border-radius:999px}
+.bar .tick{position:absolute;top:0;bottom:0;width:1px;background:var(--line-2)}
+.beats{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font:500 12px/1.3 var(--f-mono);color:var(--muted)}
+.beats i{width:9px;height:9px;border-radius:50%;border:1px solid var(--amber)}
+.beats i.on{background:var(--amber)}
+.goal{display:flex;gap:10px;align-items:baseline;margin-top:12px;padding:10px 12px;border:1px dashed var(--amber);border-radius:8px;background:var(--amber-soft)}
+.goal .fl{flex:none;color:var(--amber)}
+.goal span:last-child{min-width:0}
+.prow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:15px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.prow:last-child{border-bottom:0}
+.prow .k{min-width:0}
+.prow small{display:block;color:var(--muted);font-size:.85em}
+.prow .v{flex:none;font:600 13px/1.3 var(--f-mono);color:var(--amber);white-space:nowrap;font-variant-numeric:tabular-nums}
+
 /* ending */
 .ending{border-color:var(--amber)}
 .ending .emoji{font-size:44px;line-height:1;margin-top:8px}
@@ -399,6 +419,7 @@ function sideHTML(day){
       <div class="meta-row"><span>${esc((SKILLS[S.meta.skill] || {}).e || '★')} Skill: <b>${esc(S.meta.skillLabel || '')}</b></span><span>🪙 Tokens: <b>${+st.tokens || 0}</b></span>${st.companion ? `<span>🪿 With you: <b>${esc(st.companion)}</b></span>` : ''}</div>
     </section>
     <section class="panel"><h3>🤝 Trust</h3>${tr ? `<div class="trust">${tr}</div>` : '<p class="muted small">You haven\'t met anyone yet. Probably.</p>'}</section>
+    ${(Array.isArray(st.panels) ? st.panels : []).filter(pn => pn && pn.title).map(pn => `<section class="panel"><h3>${esc(pn.e || '▪')} ${esc(pn.title)}</h3>${(Array.isArray(pn.rows) ? pn.rows : []).map(r => `<div class="prow"><span class="k">${fmt(r.k)}${r.note ? `<small>${fmt(r.note)}</small>` : ''}</span>${r.v != null && r.v !== '' ? `<span class="v">${esc(r.v)}</span>` : ''}</div>`).join('') || '<p class="muted small">Nothing here yet.</p>'}</section>`).join('')}
     <section class="panel"><h3>🗺️ Places you've been</h3><div class="chips">${visited.map(v => `<span class="chip${v === st.loc ? ' here' : ''}">${v === st.loc ? '📍 ' : ''}${esc(v)}</span>`).join('') || '<span class="muted small">Nowhere yet.</span>'}</div></section>
     ${past.length ? `<section class="panel"><h3>📜 Story so far</h3><div class="past">${past.map(d => {
       const pk = S.picks && S.picks[dayId(d.day)];
@@ -406,6 +427,7 @@ function sideHTML(day){
     }).join('')}</div></section>` : ''}
     <section class="panel how"><h3>❔ How it works</h3>
       <p><b>One choice a day.</b> Pick an option or type your own, then lock it in.</p>
+      <p><b>The main story</b> has 12 arcs, about a month each. Watch the progress bar fill up. After that, the world opens up: trading, quests, exploring and building your base.</p>
       <p>Overnight, Claude reads what you chose and writes the next chapter. It's ready ${esc(RUN.label)}.</p>
       <p>Skip a day? No problem. Nothing happens until you choose. The story waits for you.</p>
       <p>No dice, no luck. Everyone remembers what you did.</p>
@@ -417,7 +439,7 @@ function setupHTML(){
       <div class="kicker">HUSHWELL ACOUSTICS · FACILITY 9 · A NEW CHAPTER EVERY DAY</div>
       <h1 class="big">BUNKER 9<span>DAILY</span></h1>
       <p class="lede">You wake up in an abandoned bunker. Every clock is stuck on the same minute. The whole world above has gone silent. And something deep underground is humming… in a voice that sounds a lot like yours.</p>
-      <ul class="rules"><li><b>One choice a day.</b> Locked in until tomorrow.</li><li><b>Claude writes</b> what happens next.</li><li><b>8 endings.</b> One is secret.</li></ul>
+      <ul class="rules"><li><b>One choice a day.</b> Locked in until tomorrow.</li><li><b>Claude writes</b> what happens next.</li><li><b>A year-long mystery,</b> then an open world.</li></ul>
     </section>
     ${!S.canWrite ? `<section class="panel msg"><p>This story hasn't started yet. Only the player can start it.</p></section>`
       : !ready ? `<section class="panel msg"><p><span class="pulse"></span>Day 1 is still being written. This page updates by itself.</p></section>`
@@ -431,6 +453,22 @@ function setupHTML(){
       <div class="lockrow"><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>WAKE UP ▸</button><span class="muted small">Your name and skill are kept for the whole story.</span></div>
       ${S.setupErr ? `<p class="err">${esc(S.setupErr)}</p>` : ''}
     </form>`}`;
+}
+function journeyHTML(day){
+  if (day.phase === 'open'){
+    return `<section class="journey"><div class="jrow"><span class="fl">Main story complete</span><span class="jt">🌍 Open world</span></div></section>`;
+  }
+  // The current chapter's arc, or the latest earlier chapter that had one.
+  const src = [day].concat((S.days || []).filter(d => d.day < day.day).sort((a, b) => b.day - a.day)).find(d => d && d.arc && d.arc.n);
+  if (!src) return '';
+  const a = src.arc, n = Math.max(1, Math.min(12, +a.n || 1)), total = Math.max(1, +a.total || 1), done = Math.max(0, Math.min(total, +a.done || 0));
+  const pct = Math.round(((n - 1) + done / total) / 12 * 100);
+  const ticks = Array.from({ length: 11 }, (_, i) => `<span class="tick" style="left:${((i + 1) / 12 * 100).toFixed(2)}%"></span>`).join('');
+  return `<section class="journey" aria-label="Story progress">
+    <div class="jrow"><span class="fl">Arc ${n} of 12</span><span class="jt">${fmt(a.title || '')}</span><span class="jp">Main story ${pct}%</span></div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Main story progress"><i style="width:${pct}%"></i>${ticks}</div>
+    <div class="beats">This arc: ${Array.from({ length: total }, (_, i) => `<i class="${i < done ? 'on' : ''}"></i>`).join('')} <span>${done}/${total} done</span></div>
+  </section>`;
 }
 function msgHTML(title, body, pulse){
   return `<section class="panel msg">${title ? `<h2>${esc(title)}</h2>` : ''}<p>${pulse ? '<span class="pulse"></span>' : ''}${body}</p></section>`;
@@ -459,11 +497,13 @@ function render(){
   setScope(day);
   app.innerHTML = `<div class="grid">
     <div class="main">
+      ${journeyHTML(day)}
       <article class="day">
         <div class="kicker">DAY ${day.day}${dateLabel(day.date || (day.day === 1 && S.meta.startedAt)) ? ' · ' + dateLabel(day.date || S.meta.startedAt) : ''}</div>
         <h1 class="title">${fmt(day.title || 'Day ' + day.day)}</h1>
         <div class="scene">${sceneHTML(day.scene)}</div>
         ${statusHTML(day.status)}
+        ${day.goal ? `<div class="goal"><span class="fl">🎯 Goal</span><span>${fmt(day.goal)}</span></div>` : ''}
       </article>
       ${day.ending ? endingHTML(day) : choiceHTML(day)}
     </div>
@@ -570,8 +610,8 @@ let amp = 6, target = 6, tt = 0, mode = 'bunker', colors = null, frame = 0;
 function setScope(day){
   const st = day.status || {};
   mode = day.ending && day.ending.id === 'chorus' ? 'chorus' : (st.zone || 'bunker');
-  target = { surface:0, booth:3, deep:12, chorus:13 }[mode] ?? 6;
-  const db = mode === 'surface' ? 0 : mode === 'deep' ? 74 : mode === 'booth' ? 30 : 40;
+  target = { surface:0, booth:3, deep:12, chorus:13, loud:9 }[mode] ?? 6;
+  const db = mode === 'surface' ? 0 : mode === 'deep' ? 74 : mode === 'booth' ? 30 : mode === 'loud' ? 62 : 40;
   document.getElementById('dbl').textContent = mode === 'chorus' ? 'AMBIENT 64 dB · SOUND RESTORED' : db === 0 ? 'AMBIENT 0 dB · SILENT' : `AMBIENT ${db} dB`;
   document.getElementById('clk').textContent = mode === 'chorus' ? '03:18' : '03:17';
   if (reduce){ amp = target; draw(); }
